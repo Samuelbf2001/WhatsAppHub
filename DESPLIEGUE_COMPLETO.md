@@ -6,9 +6,11 @@
 ✅ `ecosystem.config.js` - Configuración de PM2  
 ✅ `config.production.env` - Variables de entorno para producción  
 ✅ `config.development.env` - Variables de entorno para desarrollo  
+✅ `.env` - Variables de entorno activas (OAuth funcionando)
 ✅ `deploy.sh` - Script de despliegue automatizado  
 ✅ `setup-server.sh` - Script de configuración inicial del servidor  
-✅ Configuración HubSpot actualizada con URLs de producción
+✅ `SOLUCION_OAUTH.md` - Documentación de resolución de problemas OAuth
+✅ Configuración HubSpot actualizada con URLs de producción (Build #6)
 
 ## 🌐 **PASO 1: Configurar DNS**
 
@@ -85,9 +87,22 @@ chmod +x deploy.sh
 ```bash
 nano .env
 # Actualizar CLIENT_ID y CLIENT_SECRET
+# SCOPE ya incluye todos los permisos necesarios (Build #6)
 ```
 
-### **4.3 Subir configuración actualizada a HubSpot:**
+### **4.3 Scopes OAuth configurados (Build #6):**
+- ✅ **crm.lists.write** - Crear y gestionar listas/segmentos
+- ✅ **crm.objects.companies.read/write** - Gestión completa de empresas
+- ✅ **crm.objects.contacts.read/write** - Gestión completa de contactos  
+- ✅ **crm.objects.deals.read/write** - Gestión completa de oportunidades
+- ✅ **crm.objects.owners.read** - Lectura de propietarios/usuarios
+- ✅ **crm.schemas.*.read** - Esquemas de propiedades de objetos
+- ✅ **files** - Gestión completa de archivos
+- ✅ **forms** - Gestión completa de formularios
+- ✅ **oauth** - Funcionalidades OAuth avanzadas
+- ✅ **tickets** - Gestión completa de tickets de soporte
+
+### **4.4 Subir configuración actualizada a HubSpot:**
 ```bash
 cd WhatsAppHub
 hs project upload
@@ -192,7 +207,7 @@ curl -I https://whatsapphub.cloud
 - [ ] SSL instalado y funcionando
 - [ ] Aplicación desplegada y corriendo
 - [ ] Variables de entorno configuradas
-- [ ] Proyecto HubSpot actualizado
+- [ ] Proyecto HubSpot actualizado (Build #6 con scopes ampliados)
 - [ ] OAuth funcionando
 - [ ] Webhooks recibiendo datos
 - [ ] Logs funcionando correctamente

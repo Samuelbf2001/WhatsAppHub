@@ -5,13 +5,14 @@
 1. **Proyecto HubSpot** ✅
    - Nombre: WhatsAppHub Integration
    - UID: whatsapphub-integration  
-   - Build #2 desplegado exitosamente
+   - Build #6 desplegado exitosamente (con scopes ampliados y OAuth funcionando)
    - URL: https://app.hubspot.com/developer-projects/49753409/project/WhatsAppHub
 
 2. **Aplicación Node.js** ✅
    - Flujo OAuth implementado
    - Endpoints de webhook configurados
    - Servicios de integración creados
+   - **Scopes ampliados**: CRM completo, archivos, formularios, tickets
 
 ## 📋 **Próximos pasos para completar la configuración:**
 

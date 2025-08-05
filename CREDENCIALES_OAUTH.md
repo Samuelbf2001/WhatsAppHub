@@ -10,16 +10,31 @@
 
 ### **Credenciales OAuth:**
 ```
-ID de aplicación: 12402854
-ID de cliente: 0e35816b-ac03-4c90-ace2-02b3075f9d18
-Secreto del cliente: 7ecf7262-f9b1-4f58-8940-be9ca36930e5
+ID de aplicación: 17272157
+ID de cliente: 16364eec-31a5-4421-9c58-e9d0f2868797
+Secreto del cliente: 0da5a703-ef03-4d69-b4dd-62d5e7a59042
 ```
 
 ### **Variables de entorno configuradas:**
 ```env
-CLIENT_ID=0e35816b-ac03-4c90-ace2-02b3075f9d18
-CLIENT_SECRET=7ecf7262-f9b1-4f58-8940-be9ca36930e5
+CLIENT_ID=16364eec-31a5-4421-9c58-e9d0f2868797
+CLIENT_SECRET=0da5a703-ef03-4d69-b4dd-62d5e7a59042
+SCOPE=crm.lists.write crm.objects.companies.read crm.objects.companies.write crm.objects.contacts.read crm.objects.contacts.write crm.objects.deals.read crm.objects.deals.write crm.objects.owners.read crm.schemas.companies.read crm.schemas.contacts.read crm.schemas.deals.read files forms oauth tickets
 ```
+
+### **🔐 Scopes OAuth configurados:**
+- **crm.lists.write** - Crear y gestionar listas/segmentos
+- **crm.objects.companies.read/write** - Gestión completa de empresas
+- **crm.objects.contacts.read/write** - Gestión completa de contactos  
+- **crm.objects.deals.read/write** - Gestión completa de oportunidades
+- **crm.objects.owners.read** - Lectura de propietarios/usuarios
+- **crm.schemas.companies.read** - Esquemas de propiedades de empresas
+- **crm.schemas.contacts.read** - Esquemas de propiedades de contactos
+- **crm.schemas.deals.read** - Esquemas de propiedades de oportunidades
+- **files** - Gestión completa de archivos
+- **forms** - Gestión completa de formularios
+- **oauth** - Funcionalidades OAuth avanzadas
+- **tickets** - Gestión completa de tickets de soporte
 
 ## 📋 **Archivos actualizados:**
 
@@ -63,7 +78,19 @@ cp config.production.env .env
 
 ✅ **Credenciales OAuth obtenidas**  
 ✅ **Archivos de configuración actualizados**  
-✅ **Proyecto HubSpot desplegado (Build #3)**  
+✅ **Scopes OAuth ampliados (Build #6)**  
+✅ **Proyecto HubSpot desplegado con nuevos permisos**  
+✅ **Problema de redirección OAuth resuelto** (.env configurado)  
 ⏳ **Pendiente:** Configurar DNS y desplegar en servidor  
+
+## 🔗 **Enlaces del Build #6:**
+- **📊 Build #6:** https://app.hubspot.com/developer-projects/49753409/project/WhatsAppHub/activity/build/6
+- **🚀 Deploy #4:** https://app.hubspot.com/developer-projects/49753409/project/WhatsAppHub/activity/deploy/4
+
+## 🛠️ **Problema resuelto - Archivo .env:**
+Se identificó y resolvió un problema crítico donde el archivo `.env` no existía, causando que:
+- ❌ La aplicación no tuviera variables OAuth configuradas
+- ❌ HubSpot no pudiera redirigir correctamente después de autorización
+- ✅ **Solución:** Archivo `.env` creado con todas las credenciales correctas
 
 **¡Listo para probar el flujo OAuth!** 🎉 

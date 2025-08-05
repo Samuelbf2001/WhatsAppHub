@@ -5,7 +5,23 @@
   "allowedUrls": ["https://whatsapphub.cloud", "https://api.hubapi.com"],
   "auth": {
     "redirectUrls": ["http://localhost:3000/oauth-callback", "https://whatsapphub.cloud/oauth-callback"],
-    "requiredScopes": ["crm.objects.contacts.read", "crm.objects.contacts.write", "crm.objects.deals.read", "crm.objects.deals.write"],
+    "requiredScopes": [
+      "crm.lists.write",
+      "crm.objects.companies.read",
+      "crm.objects.companies.write", 
+      "crm.objects.contacts.read",
+      "crm.objects.contacts.write",
+      "crm.objects.deals.read",
+      "crm.objects.deals.write",
+      "crm.objects.owners.read",
+      "crm.schemas.companies.read",
+      "crm.schemas.contacts.read", 
+      "crm.schemas.deals.read",
+      "files",
+      "forms",
+      "oauth",
+      "tickets"
+    ],
     "optionalScopes": [],
     "conditionallyRequiredScopes": []
   },
