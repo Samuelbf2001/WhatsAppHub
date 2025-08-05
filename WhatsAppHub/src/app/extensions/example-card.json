@@ -1,0 +1,21 @@
+{
+  "type": "crm-card",
+  "data": {
+    "title": "WhatsApp Integration",
+    "description": "Información de conversaciones de WhatsApp del contacto",
+    "uid": "whatsapp-contact-card",
+    "location": "crm.record.tab",
+    "module": {
+      "file": "ExampleCard.jsx"
+    },
+    "previewImage": {
+      "file": "assets/example-card-preview.png",
+      "altText": "Example app card UI extension, demonstrating a card with a title, description, and a button"
+    },
+    "objectTypes": [
+      {
+        "name": "contacts"
+      }
+    ]
+  }
+}
