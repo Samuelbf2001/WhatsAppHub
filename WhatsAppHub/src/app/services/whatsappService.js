@@ -1,6 +1,6 @@
-const axios = require('axios');
+import axios from 'axios';
 
-class WhatsAppService {
+export default class WhatsAppService {
   constructor() {
     this.accessToken = process.env.WHATSAPP_ACCESS_TOKEN;
     this.phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
@@ -10,7 +10,7 @@ class WhatsAppService {
   // Configurar headers para peticiones
   getHeaders() {
     return {
-      'Authorization': `Bearer ${this.accessToken}`,
+      Authorization: `Bearer ${this.accessToken}`,
       'Content-Type': 'application/json'
     };
   }
@@ -18,21 +18,24 @@ class WhatsAppService {
   // Enviar mensaje de texto
   async sendTextMessage(to, message) {
     try {
-      const response = await axios.post(`${this.baseURL}/${this.phoneNumberId}/messages`, {
-        messaging_product: 'whatsapp',
-        to: to,
-        type: 'text',
-        text: {
-          body: message
-        }
-      }, {
-        headers: this.getHeaders()
-      });
-      
+      const response = await axios.post(
+        `${this.baseURL}/${this.phoneNumberId}/messages`,
+        {
+          messaging_product: 'whatsapp',
+          to,
+          type: 'text',
+          text: { body: message }
+        },
+        { headers: this.getHeaders() }
+      );
+
       console.log('✅ Mensaje enviado:', response.data);
       return response.data;
     } catch (error) {
-      console.error('❌ Error enviando mensaje:', error.response?.data || error.message);
+      console.error(
+        '❌ Error enviando mensaje:',
+        error.response?.data || error.message
+      );
       throw error;
     }
   }
@@ -40,24 +43,27 @@ class WhatsAppService {
   // Enviar mensaje de template
   async sendTemplateMessage(to, templateName, languageCode = 'es') {
     try {
-      const response = await axios.post(`${this.baseURL}/${this.phoneNumberId}/messages`, {
-        messaging_product: 'whatsapp',
-        to: to,
-        type: 'template',
-        template: {
-          name: templateName,
-          language: {
-            code: languageCode
+      const response = await axios.post(
+        `${this.baseURL}/${this.phoneNumberId}/messages`,
+        {
+          messaging_product: 'whatsapp',
+          to,
+          type: 'template',
+          template: {
+            name: templateName,
+            language: { code: languageCode }
           }
-        }
-      }, {
-        headers: this.getHeaders()
-      });
-      
+        },
+        { headers: this.getHeaders() }
+      );
+
       console.log('✅ Template enviado:', response.data);
       return response.data;
     } catch (error) {
-      console.error('❌ Error enviando template:', error.response?.data || error.message);
+      console.error(
+        '❌ Error enviando template:',
+        error.response?.data || error.message
+      );
       throw error;
     }
   }
@@ -65,17 +71,22 @@ class WhatsAppService {
   // Marcar mensaje como leído
   async markMessageAsRead(messageId) {
     try {
-      const response = await axios.post(`${this.baseURL}/${this.phoneNumberId}/messages`, {
-        messaging_product: 'whatsapp',
-        status: 'read',
-        message_id: messageId
-      }, {
-        headers: this.getHeaders()
-      });
-      
+      const response = await axios.post(
+        `${this.baseURL}/${this.phoneNumberId}/messages`,
+        {
+          messaging_product: 'whatsapp',
+          status: 'read',
+          message_id: messageId
+        },
+        { headers: this.getHeaders() }
+      );
+
       return response.data;
     } catch (error) {
-      console.error('❌ Error marcando mensaje como leído:', error.response?.data || error.message);
+      console.error(
+        '❌ Error marcando mensaje como leído:',
+        error.response?.data || error.message
+      );
       throw error;
     }
   }
@@ -90,7 +101,7 @@ class WhatsAppService {
       if (value?.messages) {
         const message = value.messages[0];
         const contact = value.contacts?.[0];
-        
+
         return {
           messageId: message.id,
           from: message.from,
@@ -101,7 +112,7 @@ class WhatsAppService {
           phoneNumber: contact?.wa_id
         };
       }
-      
+
       return null;
     } catch (error) {
       console.error('❌ Error procesando mensaje entrante:', error);
@@ -111,10 +122,8 @@ class WhatsAppService {
 
   // Formatear número de teléfono para WhatsApp
   formatPhoneNumber(phoneNumber) {
-    // Remover espacios, guiones y caracteres especiales
     let formatted = phoneNumber.replace(/[^\d+]/g, '');
-    
-    // Si no empieza con +, agregar código de país (asumiendo México +52)
+
     if (!formatted.startsWith('+')) {
       if (formatted.startsWith('52')) {
         formatted = '+' + formatted;
@@ -122,9 +131,7 @@ class WhatsAppService {
         formatted = '+52' + formatted;
       }
     }
-    
+
     return formatted;
   }
 }
-
-module.exports = WhatsAppService;
