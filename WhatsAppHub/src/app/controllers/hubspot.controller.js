@@ -1,16 +1,39 @@
 import axios from 'axios';
 import dotenv from 'dotenv';
 import HubSpotService from '../services/hubspotService.js';
+import { saveTokens, getTokens, updateAccessToken } from '../../db/tokenRepository.js';
 
 dotenv.config();
 
-let accessToken = '';
-let refreshToken = '';
-
 const CLIENT_ID = process.env.CLIENT_ID;
 const CLIENT_SECRET = process.env.CLIENT_SECRET;
-const SCOPE = process.env.SCOPE || 'crm.objects.contacts.read crm.objects.contacts.write crm.objects.deals.read crm.objects.deals.write';
+const SCOPE = process.env.SCOPE || 'crm.objects.contacts.read crm.objects.contacts.write conversations.custom_channels.read conversations.custom_channels.write';
 const REDIRECT_URI = process.env.REDIRECT_URI || `http://localhost:${process.env.PORT || 3000}/oauth-callback`;
+
+// Obtener access token válido para un portal, refrescando si expiró
+export async function getValidAccessToken(portalId) {
+  const record = await getTokens(portalId);
+  if (!record) throw new Error(`No hay tokens para el portal ${portalId}`);
+
+  const isExpired = new Date(record.expires_at) <= new Date(Date.now() + 60000);
+  if (!isExpired) return record.access_token;
+
+  const response = await axios.post(
+    'https://api.hubapi.com/oauth/v1/token',
+    new URLSearchParams({
+      grant_type: 'refresh_token',
+      client_id: CLIENT_ID,
+      client_secret: CLIENT_SECRET,
+      refresh_token: record.refresh_token
+    }),
+    { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+  );
+
+  const { access_token, expires_in } = response.data;
+  await updateAccessToken(portalId, access_token, expires_in);
+  console.log(`🔄 Token refrescado para portal ${portalId}`);
+  return access_token;
+}
 
 export const installHubspot = (req, res) => {
   console.log('🚀 Iniciando flujo OAuth de HubSpot');
@@ -28,18 +51,27 @@ export const oauthCallback = async (req, res) => {
   }
 
   try {
-    const tokenResponse = await axios.post('https://api.hubapi.com/oauth/v1/token', {
-      grant_type: 'authorization_code',
-      client_id: CLIENT_ID,
-      client_secret: CLIENT_SECRET,
-      redirect_uri: REDIRECT_URI,
-      code: authorizationCode
-    });
+    const tokenResponse = await axios.post(
+      'https://api.hubapi.com/oauth/v1/token',
+      new URLSearchParams({
+        grant_type: 'authorization_code',
+        client_id: CLIENT_ID,
+        client_secret: CLIENT_SECRET,
+        redirect_uri: REDIRECT_URI,
+        code: authorizationCode
+      }),
+      { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+    );
 
-    accessToken = tokenResponse.data.access_token;
-    refreshToken = tokenResponse.data.refresh_token;
+    const { access_token, refresh_token, expires_in } = tokenResponse.data;
 
-    console.log('🎉 Tokens obtenidos exitosamente');
+    // Obtener portal_id desde el token de acceso
+    const tokenInfo = await axios.get(`https://api.hubapi.com/oauth/v1/access-tokens/${access_token}`);
+    const portalId = String(tokenInfo.data.hub_id);
+
+    await saveTokens(portalId, access_token, refresh_token, expires_in);
+    console.log(`🎉 Tokens guardados en DB para portal ${portalId}`);
+
     res.redirect('/');
   } catch (error) {
     console.error('❌ Error en OAuth callback:', error.response?.data || error.message);
@@ -48,7 +80,9 @@ export const oauthCallback = async (req, res) => {
 };
 
 export const getHome = async (req, res) => {
-  if (!accessToken) {
+  const portalId = req.query.portalId || process.env.HUBSPOT_PORTAL_ID;
+
+  if (!portalId) {
     return res.json({
       message: 'WhatsAppHub - Integración con HubSpot',
       status: 'not_authenticated',
@@ -57,31 +91,22 @@ export const getHome = async (req, res) => {
   }
 
   try {
+    const accessToken = await getValidAccessToken(portalId);
     const accountResponse = await axios.get('https://api.hubapi.com/account-info/v3/details', {
       headers: { Authorization: `Bearer ${accessToken}` }
     });
-
-    const contactsResponse = await axios.get('https://api.hubapi.com/crm/v3/objects/contacts?limit=1', {
-      headers: { Authorization: `Bearer ${accessToken}` }
-    });
-
-    res.json({
-      status: 'authenticated',
-      account: accountResponse.data,
-      sampleContact: contactsResponse.data.results[0] || 'No contacts found'
-    });
-  } catch (error) {
-    res.json({
-      status: 'authenticated_with_errors',
-      error: 'Error consultando HubSpot API'
-    });
+    res.json({ status: 'authenticated', account: accountResponse.data });
+  } catch {
+    res.json({ status: 'not_authenticated', install_url: '/install' });
   }
 };
 
 export const getContacts = async (req, res) => {
-  if (!accessToken) return res.status(401).json({ error: 'No autenticado con HubSpot' });
+  const portalId = req.query.portalId || process.env.HUBSPOT_PORTAL_ID;
+  if (!portalId) return res.status(400).json({ error: 'portalId requerido' });
 
   try {
+    const accessToken = await getValidAccessToken(portalId);
     const hubspot = new HubSpotService(accessToken);
     const contacts = await hubspot.getContacts(20);
     res.json({ success: true, contacts: contacts.results });

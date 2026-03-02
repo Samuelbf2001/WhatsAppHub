@@ -20,7 +20,9 @@
       "files",
       "forms",
       "oauth",
-      "tickets"
+      "tickets",
+      "conversations.custom_channels.read",
+      "conversations.custom_channels.write"
     ],
     "optionalScopes": [],
     "conditionallyRequiredScopes": []

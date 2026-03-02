@@ -1,137 +1,49 @@
-import axios from 'axios';
+import EvolutionAPIProvider from './providers/EvolutionAPIProvider.js';
+import GupshupProvider from './providers/GupshupProvider.js';
 
+/**
+ * Servicio de WhatsApp con soporte multi-proveedor.
+ * Selecciona el provider según WHATSAPP_PROVIDER en .env:
+ *   - "evolution"  → EvolutionAPI (default)
+ *   - "gupshup"    → Gupshup BSP
+ *
+ * Para agregar un nuevo proveedor:
+ *   1. Crear clase en services/providers/ que extienda WhatsAppProvider
+ *   2. Importar y agregar al switch de getProvider()
+ */
 export default class WhatsAppService {
   constructor() {
-    this.accessToken = process.env.WHATSAPP_ACCESS_TOKEN;
-    this.phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
-    this.baseURL = 'https://graph.facebook.com/v18.0';
+    this.provider = WhatsAppService.getProvider();
   }
 
-  // Configurar headers para peticiones
-  getHeaders() {
-    return {
-      Authorization: `Bearer ${this.accessToken}`,
-      'Content-Type': 'application/json'
-    };
+  static getProvider() {
+    const name = (process.env.WHATSAPP_PROVIDER || 'evolution').toLowerCase();
+    switch (name) {
+      case 'gupshup':
+        return new GupshupProvider();
+      case 'evolution':
+      default:
+        return new EvolutionAPIProvider();
+    }
   }
 
-  // Enviar mensaje de texto
   async sendTextMessage(to, message) {
-    try {
-      const response = await axios.post(
-        `${this.baseURL}/${this.phoneNumberId}/messages`,
-        {
-          messaging_product: 'whatsapp',
-          to,
-          type: 'text',
-          text: { body: message }
-        },
-        { headers: this.getHeaders() }
-      );
-
-      console.log('✅ Mensaje enviado:', response.data);
-      return response.data;
-    } catch (error) {
-      console.error(
-        '❌ Error enviando mensaje:',
-        error.response?.data || error.message
-      );
-      throw error;
-    }
+    return this.provider.sendTextMessage(to, message);
   }
 
-  // Enviar mensaje de template
   async sendTemplateMessage(to, templateName, languageCode = 'es') {
-    try {
-      const response = await axios.post(
-        `${this.baseURL}/${this.phoneNumberId}/messages`,
-        {
-          messaging_product: 'whatsapp',
-          to,
-          type: 'template',
-          template: {
-            name: templateName,
-            language: { code: languageCode }
-          }
-        },
-        { headers: this.getHeaders() }
-      );
-
-      console.log('✅ Template enviado:', response.data);
-      return response.data;
-    } catch (error) {
-      console.error(
-        '❌ Error enviando template:',
-        error.response?.data || error.message
-      );
-      throw error;
-    }
+    return this.provider.sendTemplateMessage(to, templateName, languageCode);
   }
 
-  // Marcar mensaje como leído
   async markMessageAsRead(messageId) {
-    try {
-      const response = await axios.post(
-        `${this.baseURL}/${this.phoneNumberId}/messages`,
-        {
-          messaging_product: 'whatsapp',
-          status: 'read',
-          message_id: messageId
-        },
-        { headers: this.getHeaders() }
-      );
-
-      return response.data;
-    } catch (error) {
-      console.error(
-        '❌ Error marcando mensaje como leído:',
-        error.response?.data || error.message
-      );
-      throw error;
-    }
+    return this.provider.markMessageAsRead(messageId);
   }
 
-  // Procesar mensaje recibido
-  processIncomingMessage(webhookData) {
-    try {
-      const entry = webhookData.entry?.[0];
-      const changes = entry?.changes?.[0];
-      const value = changes?.value;
-
-      if (value?.messages) {
-        const message = value.messages[0];
-        const contact = value.contacts?.[0];
-
-        return {
-          messageId: message.id,
-          from: message.from,
-          timestamp: message.timestamp,
-          type: message.type,
-          text: message.text?.body,
-          contactName: contact?.profile?.name,
-          phoneNumber: contact?.wa_id
-        };
-      }
-
-      return null;
-    } catch (error) {
-      console.error('❌ Error procesando mensaje entrante:', error);
-      return null;
-    }
+  processIncomingMessage(webhookPayload) {
+    return this.provider.processIncomingWebhook(webhookPayload);
   }
 
-  // Formatear número de teléfono para WhatsApp
   formatPhoneNumber(phoneNumber) {
-    let formatted = phoneNumber.replace(/[^\d+]/g, '');
-
-    if (!formatted.startsWith('+')) {
-      if (formatted.startsWith('52')) {
-        formatted = '+' + formatted;
-      } else if (formatted.length === 10) {
-        formatted = '+52' + formatted;
-      }
-    }
-
-    return formatted;
+    return this.provider.formatPhoneNumber(phoneNumber);
   }
 }
