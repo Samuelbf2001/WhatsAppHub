@@ -30,12 +30,24 @@ export async function runMigrations() {
       );
     `);
 
-    // Migración incremental: agregar columnas si la tabla ya existe sin ellas
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS partner_tokens (
+        id SERIAL PRIMARY KEY,
+        token TEXT NOT NULL,
+        expires_at TIMESTAMP NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW()
+      );
+    `);
+
+    // Migraciones incrementales — agregar columnas si la tabla ya existe sin ellas
     await client.query(`
       ALTER TABLE channel_accounts
         ADD COLUMN IF NOT EXISTS inbox_id VARCHAR(100),
-        ADD COLUMN IF NOT EXISTS authorized BOOLEAN DEFAULT TRUE;
-    `).catch(() => {}); // ignorar si ya existen
+        ADD COLUMN IF NOT EXISTS authorized BOOLEAN DEFAULT TRUE,
+        ADD COLUMN IF NOT EXISTS gupshup_app_id VARCHAR(100),
+        ADD COLUMN IF NOT EXISTS gupshup_app_token TEXT,
+        ADD COLUMN IF NOT EXISTS gupshup_app_token_expires_at TIMESTAMP;
+    `).catch(() => {});
 
     console.log('✅ Migraciones ejecutadas correctamente');
   } catch (err) {

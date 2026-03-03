@@ -2,76 +2,74 @@ import axios from 'axios';
 import WhatsAppProvider from './WhatsAppProvider.js';
 
 /**
- * Proveedor para Gupshup (BSP oficial de Meta).
- * Docs: https://www.gupshup.io/developer/docs/bot-platform/guide/whatsapp-api-documentation
+ * Proveedor para Gupshup Partner API (BSP oficial de Meta, multi-tenant).
+ * Docs: https://partner-docs.gupshup.io
  *
- * Variables de entorno requeridas:
- *   GUPSHUP_API_KEY        → API key de Gupshup
- *   GUPSHUP_APP_NAME       → Nombre de la app en Gupshup
- *   GUPSHUP_SRC_NUMBER     → Número de origen registrado en Gupshup
+ * Recibe credenciales por instancia (una por cliente/portal):
+ *   appId    → ID del App en Gupshup (obtenido al crear el sub-account)
+ *   appToken → App-level access token (expira 24h, gestionado por GupshupPartnerService)
+ *
+ * Variables de entorno globales (solo para GupshupPartnerService):
+ *   GUPSHUP_PARTNER_EMAIL
+ *   GUPSHUP_PARTNER_PASSWORD
  */
 export default class GupshupProvider extends WhatsAppProvider {
-  constructor() {
+  constructor({ appId, appToken } = {}) {
     super();
-    this.apiKey = process.env.GUPSHUP_API_KEY;
-    this.appName = process.env.GUPSHUP_APP_NAME;
-    this.srcNumber = process.env.GUPSHUP_SRC_NUMBER;
-    this.baseUrl = 'https://api.gupshup.io/sm/api/v1';
-    this.headers = {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'apikey': this.apiKey
+    this.appId = appId;
+    this.appToken = appToken;
+    this.partnerBase = 'https://partner.gupshup.io/partner';
+  }
+
+  getHeaders() {
+    return {
+      Authorization: this.appToken,
+      'Content-Type': 'application/json'
     };
   }
 
+  // POST /partner/app/{appId}/v3/message (formato Meta JSON)
   async sendTextMessage(to, message) {
-    const params = new URLSearchParams({
-      channel: 'whatsapp',
-      source: this.srcNumber,
-      destination: to,
-      'src.name': this.appName,
-      message: JSON.stringify({ type: 'text', text: message })
-    });
-
     const { data } = await axios.post(
-      `${this.baseUrl}/msg`,
-      params,
-      { headers: this.headers }
+      `${this.partnerBase}/app/${this.appId}/v3/message`,
+      {
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to,
+        type: 'text',
+        text: { preview_url: false, body: message }
+      },
+      { headers: this.getHeaders() }
     );
-    return { messageId: data.messageId };
+    return { messageId: data.messages?.[0]?.id };
   }
 
+  // POST /partner/app/{appId}/v3/message (template formato Meta)
   async sendTemplateMessage(to, templateName, languageCode = 'es') {
-    const params = new URLSearchParams({
-      channel: 'whatsapp',
-      source: this.srcNumber,
-      destination: to,
-      'src.name': this.appName,
-      message: JSON.stringify({
+    const { data } = await axios.post(
+      `${this.partnerBase}/app/${this.appId}/v3/message`,
+      {
+        messaging_product: 'whatsapp',
+        to,
         type: 'template',
         template: {
-          id: templateName,
-          params: []
+          name: templateName,
+          language: { code: languageCode }
         }
-      }),
-      template: 'true'
-    });
-
-    const { data } = await axios.post(
-      `${this.baseUrl}/msg`,
-      params,
-      { headers: this.headers }
+      },
+      { headers: this.getHeaders() }
     );
-    return { messageId: data.messageId };
+    return { messageId: data.messages?.[0]?.id };
   }
 
   async markMessageAsRead(messageId) {
-    // Gupshup no expone endpoint de read receipts directamente
+    // Gupshup Partner API no expone endpoint de read receipts
     console.log(`[Gupshup] markAsRead: ${messageId} (no soportado vía API)`);
   }
 
   /**
-   * Normalizar el webhook de Gupshup al formato estándar.
-   * Gupshup envía: { app, timestamp, version, type, payload: { ... } }
+   * Parsear webhook Gupshup v2.
+   * Payload: { app, timestamp, version, type: "message", payload: { id, source, type, payload: { text }, sender: { phone, name } } }
    */
   processIncomingWebhook(payload) {
     try {
@@ -82,7 +80,7 @@ export default class GupshupProvider extends WhatsAppProvider {
 
       return {
         messageId: msg.id,
-        phoneNumber: msg.sender?.phone,
+        phoneNumber: msg.sender?.phone || msg.source,
         contactName: msg.sender?.name || null,
         text: msg.payload?.text,
         timestamp: payload.timestamp,

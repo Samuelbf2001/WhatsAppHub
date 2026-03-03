@@ -3,7 +3,9 @@ import WhatsAppService from '../services/whatsappService.js';
 import HubSpotService from '../services/hubspotService.js';
 import CustomChannelsService from '../services/customChannelsService.js';
 import { getValidAccessToken } from './hubspot.controller.js';
-import { getChannelAccount } from '../../db/channelRepository.js';
+import { getChannelAccount, getGupshupApp } from '../../db/channelRepository.js';
+
+const isGupshup = () => (process.env.WHATSAPP_PROVIDER || 'evolution').toLowerCase() === 'gupshup';
 
 dotenv.config();
 
@@ -70,14 +72,27 @@ export const receiveMessage = async (req, res) => {
 };
 
 export const sendMessage = async (req, res) => {
-  const { phoneNumber, message } = req.body;
+  const { portalId, phoneNumber, message } = req.body;
   if (!phoneNumber || !message) return res.status(400).json({ error: 'Faltan parámetros' });
 
   try {
-    const whatsapp = new WhatsAppService();
+    let whatsapp;
+    if (isGupshup()) {
+      const pid = portalId || process.env.HUBSPOT_PORTAL_ID;
+      if (!pid) return res.status(400).json({ error: 'portalId requerido para Gupshup' });
+      const gupshupApp = await getGupshupApp(String(pid));
+      if (!gupshupApp) return res.status(404).json({ error: `No hay credenciales Gupshup para portal ${pid}` });
+      whatsapp = new WhatsAppService({
+        appId: gupshupApp.gupshup_app_id,
+        appToken: gupshupApp.gupshup_app_token
+      });
+    } else {
+      whatsapp = new WhatsAppService();
+    }
+
     const formattedPhone = whatsapp.formatPhoneNumber(phoneNumber);
     const result = await whatsapp.sendTextMessage(formattedPhone, message);
-    res.json({ success: true, messageId: result.messages[0].id });
+    res.json({ success: true, result });
   } catch (error) {
     res.status(500).json({ error: 'Error enviando mensaje', details: error.message });
   }

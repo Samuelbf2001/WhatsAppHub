@@ -44,6 +44,28 @@ export async function deleteChannelAccount(portalId, channelAccountId) {
   );
 }
 
+// Guardar credenciales Gupshup Partner de un sub-account
+export async function saveGupshupApp(portalId, channelAccountId, gupshupAppId, gupshupAppToken, expiresAt) {
+  await pool.query(
+    `UPDATE channel_accounts
+     SET gupshup_app_id = $1, gupshup_app_token = $2, gupshup_app_token_expires_at = $3
+     WHERE portal_id = $4 AND channel_account_id = $5`,
+    [gupshupAppId, gupshupAppToken, expiresAt, portalId, channelAccountId]
+  );
+}
+
+// Obtener credenciales Gupshup de un portal
+export async function getGupshupApp(portalId) {
+  const { rows } = await pool.query(
+    `SELECT gupshup_app_id, gupshup_app_token, gupshup_app_token_expires_at, channel_account_id
+     FROM channel_accounts
+     WHERE portal_id = $1 AND gupshup_app_id IS NOT NULL
+     ORDER BY created_at DESC LIMIT 1`,
+    [portalId]
+  );
+  return rows[0] || null;
+}
+
 export async function getAllChannelAccounts() {
   const { rows } = await pool.query(
     'SELECT * FROM channel_accounts ORDER BY created_at DESC'

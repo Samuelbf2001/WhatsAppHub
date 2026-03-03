@@ -2,6 +2,7 @@ import dotenv from 'dotenv';
 import WhatsAppService from '../services/whatsappService.js';
 import HubSpotService from '../services/hubspotService.js';
 import CustomChannelsService from '../services/customChannelsService.js';
+import GupshupPartnerService from '../services/gupshupPartnerService.js';
 import { getValidAccessToken } from './hubspot.controller.js';
 import {
   saveChannelAccount,
@@ -9,8 +10,12 @@ import {
   getChannelAccount,
   getChannelAccountById,
   updateAuthorized,
-  deleteChannelAccount
+  deleteChannelAccount,
+  saveGupshupApp,
+  getGupshupApp
 } from '../../db/channelRepository.js';
+
+const isGupshup = () => (process.env.WHATSAPP_PROVIDER || 'evolution').toLowerCase() === 'gupshup';
 
 dotenv.config();
 
@@ -43,8 +48,7 @@ export const setupChannel = async (req, res) => {
   }
 
   try {
-    const whatsapp = new WhatsAppService();
-    const formattedPhone = whatsapp.formatPhoneNumber(phoneNumber);
+    const formattedPhone = phoneNumber.replace(/\D/g, '');
 
     const accessToken = await getValidAccessToken(portalId);
     const customChannels = new CustomChannelsService(accessToken);
@@ -57,10 +61,10 @@ export const setupChannel = async (req, res) => {
       channelId = existing.channel_id;
       console.log(`♻️  Canal existente reutilizado para portal ${portalId}: ${channelId}`);
     } else {
-      const webhookUrl = `${process.env.WEBHOOK_BASE_URL}/hubspot-channel-webhook`;
+      const hubspotWebhookUrl = `${process.env.WEBHOOK_BASE_URL}/hubspot-channel-webhook`;
       const channel = await customChannels.registerChannel({
         name: displayName || 'WhatsApp',
-        webhookUrl
+        webhookUrl: hubspotWebhookUrl
       });
       channelId = channel.id;
       console.log(`✅ Canal registrado: ${channelId}`);
@@ -75,12 +79,30 @@ export const setupChannel = async (req, res) => {
 
     await saveChannelAccount(portalId, channelId, account.id, inboxId, phoneNumberId, formattedPhone);
 
+    // Si usamos Gupshup Partner: crear App, configurar webhook y guardar credenciales
+    let gupshupAppId;
+    if (isGupshup()) {
+      const whatsappWebhookUrl = `${process.env.WEBHOOK_BASE_URL}/whatsapp-webhook?portalId=${portalId}`;
+      const partner = new GupshupPartnerService();
+      const gupshupApp = await partner.createApp({
+        displayName: displayName || `WhatsApp ${formattedPhone}`,
+        webhookUrl: whatsappWebhookUrl
+      });
+      gupshupAppId = gupshupApp.id || gupshupApp.app?.id;
+      await partner.setWebhook(gupshupAppId, whatsappWebhookUrl);
+      const gupshupAppToken = await partner.getAppToken(gupshupAppId);
+      const tokenExpiresAt = new Date(Date.now() + 23 * 60 * 60 * 1000);
+      await saveGupshupApp(portalId, account.id, gupshupAppId, gupshupAppToken, tokenExpiresAt);
+      console.log(`✅ Gupshup App configurada para portal ${portalId}: ${gupshupAppId}`);
+    }
+
     res.json({
       success: true,
       channelId,
       channelAccountId: account.id,
       inboxId,
-      phoneNumber: formattedPhone
+      phoneNumber: formattedPhone,
+      ...(gupshupAppId && { gupshupAppId })
     });
   } catch (error) {
     const status = error.response?.status === 409 ? 409 : 500;
@@ -117,7 +139,21 @@ export const handleHubSpotChannelWebhook = async (req, res) => {
         const { recipientId, messageContent } = req.body;
         if (!recipientId || !messageContent) break;
 
-        const whatsapp = new WhatsAppService();
+        let whatsapp;
+        if (isGupshup()) {
+          const gupshupApp = await getGupshupApp(String(portalId));
+          if (!gupshupApp) {
+            console.error(`❌ No hay credenciales Gupshup para portal ${portalId}`);
+            break;
+          }
+          whatsapp = new WhatsAppService({
+            appId: gupshupApp.gupshup_app_id,
+            appToken: gupshupApp.gupshup_app_token
+          });
+        } else {
+          whatsapp = new WhatsAppService();
+        }
+
         const phone = whatsapp.formatPhoneNumber(recipientId);
         await whatsapp.sendTextMessage(phone, messageContent);
         console.log(`✅ Mensaje enviado a WhatsApp: ${phone}`);
