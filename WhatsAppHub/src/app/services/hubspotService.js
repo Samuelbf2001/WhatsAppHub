@@ -126,6 +126,20 @@ export default class HubSpotService {
     }
   }
 
+  // Obtener inboxes de Conversaciones del portal
+  async getInboxes() {
+    try {
+      const { data } = await axios.get(
+        `${this.baseURL}/conversations/v1/conversations/inboxes`,
+        { headers: this.getHeaders() }
+      );
+      return data.results || data;
+    } catch (error) {
+      console.error('Error obteniendo inboxes:', error.response?.data || error.message);
+      throw error;
+    }
+  }
+
   // Obtener deals asociados a un contacto
   async getContactDeals(contactId) {
     try {

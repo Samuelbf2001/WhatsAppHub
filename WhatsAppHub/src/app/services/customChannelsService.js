@@ -24,11 +24,13 @@ export default class CustomChannelsService {
   }
 
   // Conectar una cuenta de WhatsApp al canal
-  async createChannelAccount(channelId, { displayName, phoneNumber }) {
+  async createChannelAccount(channelId, { displayName, phoneNumber, inboxId }) {
     const { data } = await axios.post(
       `${BASE_URL}/${channelId}/channel-accounts`,
       {
         name: displayName,
+        inboxId,
+        authorized: true,
         deliveryIdentifier: {
           type: 'PHONE_NUMBER',
           value: phoneNumber
@@ -72,11 +74,11 @@ export default class CustomChannelsService {
     return data;
   }
 
-  // Listar canales registrados
-  async listChannels(appId) {
-    const { data } = await axios.get(`${BASE_URL}?appId=${appId}`, {
+  // Listar canales registrados del portal actual
+  async listChannels() {
+    const { data } = await axios.get(BASE_URL, {
       headers: this.headers
     });
-    return data;
+    return data.results || data;
   }
 }
