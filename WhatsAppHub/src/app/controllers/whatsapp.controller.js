@@ -45,15 +45,11 @@ export const receiveMessage = async (req, res) => {
       return;
     }
 
-    // Buscar o crear contacto en HubSpot CRM
+    // Garantizar que el contacto exista ANTES de publicar el mensaje.
+    // La asociación contacto↔conversación ocurre en el momento de creación del hilo —
+    // si el contacto no existe, HubSpot lo crea como visitante desconocido.
     const hubspot = new HubSpotService(accessToken);
-    const contacts = await hubspot.findContactByPhone(messageData.phoneNumber);
-    if (contacts.length === 0) {
-      await hubspot.createContact({
-        firstname: messageData.contactName || 'WhatsApp Contact',
-        phone: messageData.phoneNumber
-      });
-    }
+    await hubspot.findOrCreateContactByPhone(messageData.phoneNumber, messageData.contactName);
 
     // Publicar mensaje en HubSpot Inbox via Custom Channels API
     const customChannels = new CustomChannelsService(accessToken);

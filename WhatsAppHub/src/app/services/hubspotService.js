@@ -72,20 +72,33 @@ export default class HubSpotService {
     }
   }
 
-  // Buscar contacto por teléfono
+  // Genera variantes de formato de un número de teléfono para búsqueda amplia
+  _phoneVariants(phone) {
+    const digits = phone.replace(/\D/g, '');
+    const variants = new Set([phone, digits]);
+    // Con + al inicio
+    variants.add(`+${digits}`);
+    // Sin código de país México (52) → 10 dígitos locales
+    if (digits.startsWith('52') && digits.length === 12) variants.add(digits.slice(2));
+    // Sin código de país USA/Canada (1) → 10 dígitos locales
+    if (digits.startsWith('1') && digits.length === 11) variants.add(digits.slice(1));
+    return [...variants];
+  }
+
+  // Buscar contacto por teléfono en múltiples propiedades y formatos
   async findContactByPhone(phoneNumber) {
+    const variants = this._phoneVariants(phoneNumber);
+    const props = ['phone', 'mobilephone'];
+
+    // Cada filterGroup es un OR; dentro de cada grupo los filters son AND
+    const filterGroups = variants.flatMap(v =>
+      props.map(prop => ({ filters: [{ propertyName: prop, operator: 'EQ', value: v }] }))
+    );
+
     try {
       const { data } = await axios.post(
         `${this.baseURL}/crm/v3/objects/contacts/search`,
-        {
-          filterGroups: [
-            {
-              filters: [
-                { propertyName: 'phone', operator: 'EQ', value: phoneNumber }
-              ]
-            }
-          ]
-        },
+        { filterGroups, properties: ['firstname', 'lastname', 'phone', 'mobilephone', 'email'] },
         { headers: this.getHeaders() }
       );
       return data.results;
@@ -93,6 +106,20 @@ export default class HubSpotService {
       console.error('Error buscando contacto por teléfono:', error.response?.data || error.message);
       throw error;
     }
+  }
+
+  // Busca el contacto; si no existe lo crea. Retorna siempre el contacto.
+  // DEBE llamarse ANTES de publicar el primer mensaje (la asociación ocurre al crear la conversación).
+  async findOrCreateContactByPhone(phoneNumber, name) {
+    const results = await this.findContactByPhone(phoneNumber);
+    if (results.length > 0) return results[0];
+
+    const nameParts = (name || '').trim().split(' ');
+    return this.createContact({
+      phone: phoneNumber,
+      firstname: nameParts[0] || 'WhatsApp',
+      lastname: nameParts.slice(1).join(' ') || 'Contact'
+    });
   }
 
   // Crear nota en contacto
