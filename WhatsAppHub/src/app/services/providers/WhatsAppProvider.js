@@ -20,7 +20,7 @@ export default class WhatsAppProvider {
    * @param {string} languageCode - Código de idioma (ej: 'es')
    * @returns {Promise<{ messageId: string }>}
    */
-  async sendTemplateMessage(to, templateName, languageCode = 'es') {
+  async sendTemplateMessage(to, templateName, languageCode = 'es', params = []) {
     throw new Error('sendTemplateMessage() no implementado');
   }
 

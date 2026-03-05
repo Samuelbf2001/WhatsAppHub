@@ -16,7 +16,13 @@ export default class CustomChannelsService {
     const { data } = await axios.post(BASE_URL, {
       name,
       webhookUrl,
-      deliveryIdentifierTypes: ['PHONE_NUMBER']
+      capabilities: {
+        deliveryIdentifierTypes: ['HS_PHONE_NUMBER'],
+        threadingModel: 'DELIVERY_IDENTIFIER',
+        richText: [],
+        allowInlineImages: false,
+        allowOutgoingMessages: true
+      }
     }, { headers: this.headers });
 
     console.log('✅ Canal registrado en HubSpot:', data.id);
@@ -32,7 +38,7 @@ export default class CustomChannelsService {
         inboxId,
         authorized: true,
         deliveryIdentifier: {
-          type: 'PHONE_NUMBER',
+          type: 'HS_PHONE_NUMBER',
           value: phoneNumber
         }
       },
@@ -43,30 +49,57 @@ export default class CustomChannelsService {
     return data;
   }
 
-  // Publicar un mensaje entrante de WhatsApp en el HubSpot Inbox
-  // Usa modelo DELIVERY_IDENTIFIER: HubSpot agrupa por número de teléfono
-  async publishIncomingMessage(channelId, { senderPhone, senderName, recipientPhone, messageText, timestamp }) {
+  /**
+   * Publicar un mensaje entrante de WhatsApp en el HubSpot Inbox.
+   * Usa modelo DELIVERY_IDENTIFIER: integrationThreadId debe ser null.
+   * channelAccountId es REQUERIDO por HubSpot para asociar el mensaje.
+   */
+  async publishIncomingMessage(channelId, { channelAccountId, senderPhone, senderName, recipientPhone, messageText, timestamp }) {
     const { data } = await axios.post(
       `${BASE_URL}/${channelId}/messages`,
       {
-        type: 'MESSAGE',
-        direction: 'INCOMING',
-        channelSpecificConversationId: senderPhone,
+        channelAccountId,
+        integrationThreadId: null,
+        messageDirection: 'INCOMING',
         senders: [{
-          deliveryIdentifier: {
-            type: 'PHONE_NUMBER',
-            value: senderPhone
-          },
+          deliveryIdentifier: { type: 'HS_PHONE_NUMBER', value: senderPhone },
           name: senderName || senderPhone
         }],
         recipients: [{
-          deliveryIdentifier: {
-            type: 'PHONE_NUMBER',
-            value: recipientPhone
-          }
+          deliveryIdentifier: { type: 'HS_PHONE_NUMBER', value: recipientPhone }
         }],
         text: messageText,
-        createdAt: timestamp ? new Date(Number(timestamp) * 1000).toISOString() : new Date().toISOString()
+        timestamp: timestamp
+          ? new Date(Number(timestamp) * 1000).toISOString()
+          : new Date().toISOString()
+      },
+      { headers: this.headers }
+    );
+
+    return data;
+  }
+
+  /**
+   * Publicar un mensaje de sistema en la conversación de HubSpot.
+   * Aparece como mensaje entrante con sender "⚠️ WhatsAppHub" para notificar al agente.
+   * Se usa cuando la ventana de 24h está cerrada o para avisos del sistema.
+   */
+  async publishSystemNotification(channelId, { channelAccountId, customerPhone, businessPhone, text }) {
+    const { data } = await axios.post(
+      `${BASE_URL}/${channelId}/messages`,
+      {
+        channelAccountId,
+        integrationThreadId: null,
+        messageDirection: 'INCOMING',
+        senders: [{
+          deliveryIdentifier: { type: 'HS_PHONE_NUMBER', value: customerPhone },
+          name: '⚠️ WhatsAppHub Sistema'
+        }],
+        recipients: [{
+          deliveryIdentifier: { type: 'HS_PHONE_NUMBER', value: businessPhone }
+        }],
+        text,
+        timestamp: new Date().toISOString()
       },
       { headers: this.headers }
     );

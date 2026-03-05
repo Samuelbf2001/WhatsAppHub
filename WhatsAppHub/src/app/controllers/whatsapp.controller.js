@@ -4,6 +4,7 @@ import HubSpotService from '../services/hubspotService.js';
 import CustomChannelsService from '../services/customChannelsService.js';
 import { getValidAccessToken } from './hubspot.controller.js';
 import { getChannelAccount, getGupshupApp } from '../../db/channelRepository.js';
+import { updateServiceWindow } from '../../db/serviceWindowRepository.js';
 
 const isGupshup = () => (process.env.WHATSAPP_PROVIDER || 'evolution').toLowerCase() === 'gupshup';
 
@@ -54,12 +55,16 @@ export const receiveMessage = async (req, res) => {
     // Publicar mensaje en HubSpot Inbox via Custom Channels API
     const customChannels = new CustomChannelsService(accessToken);
     await customChannels.publishIncomingMessage(channelAccount.channel_id, {
+      channelAccountId: channelAccount.channel_account_id,
       senderPhone: messageData.phoneNumber,
       senderName: messageData.contactName || messageData.phoneNumber,
       recipientPhone: channelAccount.whatsapp_phone_number,
       messageText: messageData.text,
       timestamp: messageData.timestamp
     });
+
+    // Actualizar ventana de servicio: el cliente acaba de escribir → 24h abiertas
+    await updateServiceWindow(portalId, messageData.phoneNumber);
 
     console.log(`✅ Mensaje publicado en HubSpot Inbox para portal ${portalId}`);
   } catch (error) {

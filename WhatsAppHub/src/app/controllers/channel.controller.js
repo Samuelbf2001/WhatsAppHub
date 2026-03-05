@@ -14,8 +14,27 @@ import {
   saveGupshupApp,
   getGupshupApp
 } from '../../db/channelRepository.js';
+import { getWindowStatus } from '../../db/serviceWindowRepository.js';
 
 const isGupshup = () => (process.env.WHATSAPP_PROVIDER || 'evolution').toLowerCase() === 'gupshup';
+
+/**
+ * Parsear el comando /plantilla del agente.
+ * Sintaxis: /plantilla nombre_template [param1|param2|param3]
+ * Retorna: { templateName, params } o null si no es un comando de plantilla.
+ */
+function parseTemplateCommand(text) {
+  const trimmed = (text || '').trim();
+  if (!/^\/plantilla\s+/i.test(trimmed)) return null;
+
+  const parts = trimmed.replace(/^\/plantilla\s+/i, '').trim();
+  const [namePart, paramsPart] = parts.split(/\s+(.+)/);
+  const templateName = namePart?.trim();
+  if (!templateName) return null;
+
+  const params = paramsPart ? paramsPart.split('|').map(p => p.trim()) : [];
+  return { templateName, params };
+}
 
 dotenv.config();
 
@@ -136,9 +155,19 @@ export const handleHubSpotChannelWebhook = async (req, res) => {
 
     switch (eventType) {
       case 'OUTGOING_CHANNEL_MESSAGE_CREATED': {
-        const { recipientId, messageContent } = req.body;
-        if (!recipientId || !messageContent) break;
+        // Extraer datos del payload anidado de HubSpot
+        const msg = req.body.message || {};
+        const customerPhone = msg.recipients?.[0]?.deliveryIdentifier?.value;
+        const businessPhone = msg.senders?.[0]?.deliveryIdentifier?.value;
+        const messageText = msg.text;
+        const msgChannelAccountId = msg.channelAccountId || channelAccountId;
 
+        if (!customerPhone || !messageText) {
+          console.warn('⚠️ OUTGOING sin customerPhone o text', JSON.stringify(req.body));
+          break;
+        }
+
+        // Obtener credenciales WhatsApp
         let whatsapp;
         if (isGupshup()) {
           const gupshupApp = await getGupshupApp(String(portalId));
@@ -154,9 +183,48 @@ export const handleHubSpotChannelWebhook = async (req, res) => {
           whatsapp = new WhatsAppService();
         }
 
-        const phone = whatsapp.formatPhoneNumber(recipientId);
-        await whatsapp.sendTextMessage(phone, messageContent);
-        console.log(`✅ Mensaje enviado a WhatsApp: ${phone}`);
+        const phone = whatsapp.formatPhoneNumber(customerPhone);
+
+        // Verificar ventana de servicio de 24h
+        const window = await getWindowStatus(String(portalId), customerPhone);
+
+        if (window.open) {
+          // Ventana abierta → enviar texto libre
+          await whatsapp.sendTextMessage(phone, messageText);
+          console.log(`✅ Mensaje libre enviado a ${phone}`);
+        } else {
+          // Ventana cerrada → solo se permiten templates
+          const templateCmd = parseTemplateCommand(messageText);
+
+          if (templateCmd) {
+            // El agente usó el comando /plantilla
+            await whatsapp.sendTemplateMessage(phone, templateCmd.templateName, 'es', templateCmd.params);
+            console.log(`✅ Template '${templateCmd.templateName}' enviado a ${phone}`);
+          } else {
+            // El agente escribió texto libre con ventana cerrada → notificar
+            console.warn(`⚠️ Ventana cerrada para ${phone} — mensaje no enviado`);
+
+            const channelAccount = await getChannelAccount(String(portalId));
+            if (channelAccount) {
+              const accessToken = await getValidAccessToken(String(portalId));
+              const customChannels = new CustomChannelsService(accessToken);
+              await customChannels.publishSystemNotification(channelAccount.channel_id, {
+                channelAccountId: msgChannelAccountId,
+                customerPhone,
+                businessPhone: businessPhone || channelAccount.whatsapp_phone_number,
+                text: [
+                  '⚠️ Ventana de servicio de 24h cerrada.',
+                  'El cliente no puede recibir mensajes libres.',
+                  '',
+                  'Para contactarlo usa el comando:',
+                  '/plantilla nombre_plantilla [param1|param2]',
+                  '',
+                  'Ejemplo: /plantilla saludo_inicial Juan'
+                ].join('\n')
+              });
+            }
+          }
+        }
         break;
       }
 

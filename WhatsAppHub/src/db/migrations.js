@@ -39,6 +39,16 @@ export async function runMigrations() {
       );
     `);
 
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS service_windows (
+        id SERIAL PRIMARY KEY,
+        portal_id VARCHAR(50) NOT NULL,
+        customer_phone VARCHAR(30) NOT NULL,
+        last_message_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        UNIQUE(portal_id, customer_phone)
+      );
+    `);
+
     // Migraciones incrementales — agregar columnas si la tabla ya existe sin ellas
     await client.query(`
       ALTER TABLE channel_accounts

@@ -44,19 +44,29 @@ export default class GupshupProvider extends WhatsAppProvider {
     return { messageId: data.messages?.[0]?.id };
   }
 
-  // POST /partner/app/{appId}/v3/message (template formato Meta)
-  async sendTemplateMessage(to, templateName, languageCode = 'es') {
+  /**
+   * Enviar template/HSM (mensaje fuera de ventana de 24h).
+   * @param {string} to - Número destino en E.164
+   * @param {string} templateName - Nombre exacto del template aprobado en Meta
+   * @param {string} languageCode - Código de idioma (default: 'es')
+   * @param {string[]} params - Parámetros del cuerpo del template [{{1}}, {{2}}, ...]
+   */
+  async sendTemplateMessage(to, templateName, languageCode = 'es', params = []) {
+    const template = {
+      name: templateName,
+      language: { code: languageCode }
+    };
+
+    if (params.length > 0) {
+      template.components = [{
+        type: 'body',
+        parameters: params.map(p => ({ type: 'text', text: String(p) }))
+      }];
+    }
+
     const { data } = await axios.post(
       `${this.partnerBase}/app/${this.appId}/v3/message`,
-      {
-        messaging_product: 'whatsapp',
-        to,
-        type: 'template',
-        template: {
-          name: templateName,
-          language: { code: languageCode }
-        }
-      },
+      { messaging_product: 'whatsapp', to, type: 'template', template },
       { headers: this.getHeaders() }
     );
     return { messageId: data.messages?.[0]?.id };

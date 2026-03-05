@@ -33,8 +33,8 @@ export default class WhatsAppService {
     return this.provider.sendTextMessage(to, message);
   }
 
-  async sendTemplateMessage(to, templateName, languageCode = 'es') {
-    return this.provider.sendTemplateMessage(to, templateName, languageCode);
+  async sendTemplateMessage(to, templateName, languageCode = 'es', params = []) {
+    return this.provider.sendTemplateMessage(to, templateName, languageCode, params);
   }
 
   async markMessageAsRead(messageId) {
