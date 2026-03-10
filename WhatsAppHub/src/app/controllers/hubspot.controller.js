@@ -2,6 +2,7 @@ import axios from 'axios';
 import dotenv from 'dotenv';
 import HubSpotService from '../services/hubspotService.js';
 import { saveTokens, getTokens, updateAccessToken } from '../../db/tokenRepository.js';
+import { generateToken } from '../middleware/auth.middleware.js';
 
 dotenv.config();
 
@@ -72,7 +73,10 @@ export const oauthCallback = async (req, res) => {
     await saveTokens(portalId, access_token, refresh_token, expires_in);
     console.log(`🎉 Tokens guardados en DB para portal ${portalId}`);
 
-    res.redirect('/');
+    // Emitir JWT y redirigir al frontend del dashboard
+    const frontendUrl = process.env.FRONTEND_URL || 'https://whatsfull.sixteam.pro';
+    const jwtToken = generateToken(portalId);
+    res.redirect(`${frontendUrl}/dashboard?token=${jwtToken}&portalId=${portalId}`);
   } catch (error) {
     console.error('❌ Error en OAuth callback:', error.response?.data || error.message);
     res.status(500).json({ error: 'Error en OAuth callback', details: error.response?.data || error.message });

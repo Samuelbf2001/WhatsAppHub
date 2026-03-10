@@ -15,30 +15,28 @@ import {
   getGupshupApp
 } from '../../db/channelRepository.js';
 import { getWindowStatus } from '../../db/serviceWindowRepository.js';
+import { insertLog } from '../../db/logRepository.js';
 
-const isGupshup = () => (process.env.WHATSAPP_PROVIDER || 'evolution').toLowerCase() === 'gupshup';
+dotenv.config();
+
+const getProvider = () => (process.env.WHATSAPP_PROVIDER || 'evolution').toLowerCase();
+const isGupshup = () => getProvider() === 'gupshup';
 
 /**
  * Parsear el comando /plantilla del agente.
  * Sintaxis: /plantilla nombre_template [param1|param2|param3]
- * Retorna: { templateName, params } o null si no es un comando de plantilla.
  */
 function parseTemplateCommand(text) {
   const trimmed = (text || '').trim();
   if (!/^\/plantilla\s+/i.test(trimmed)) return null;
-
   const parts = trimmed.replace(/^\/plantilla\s+/i, '').trim();
   const [namePart, paramsPart] = parts.split(/\s+(.+)/);
   const templateName = namePart?.trim();
   if (!templateName) return null;
-
   const params = paramsPart ? paramsPart.split('|').map(p => p.trim()) : [];
   return { templateName, params };
 }
 
-dotenv.config();
-
-// Listar inboxes disponibles en el portal de HubSpot
 // GET /api/channels/inboxes?portalId=
 export const listInboxes = async (req, res) => {
   const portalId = req.query.portalId || process.env.HUBSPOT_PORTAL_ID;
@@ -54,10 +52,9 @@ export const listInboxes = async (req, res) => {
   }
 };
 
-// Registrar canal y conectar cuenta de WhatsApp con inboxId
 // POST /api/channels/setup
 export const setupChannel = async (req, res) => {
-  const { portalId, phoneNumberId, phoneNumber, inboxId, displayName } = req.body;
+  const { portalId, phoneNumberId, phoneNumber, inboxId, displayName, evolutionInstance } = req.body;
 
   if (!portalId || !phoneNumberId || !phoneNumber || !inboxId) {
     return res.status(400).json({
@@ -68,11 +65,12 @@ export const setupChannel = async (req, res) => {
 
   try {
     const formattedPhone = phoneNumber.replace(/\D/g, '');
+    const provider = getProvider();
 
     const accessToken = await getValidAccessToken(portalId);
     const customChannels = new CustomChannelsService(accessToken);
 
-    // Verificar si ya existe un canal para este portal (evitar duplicados)
+    // Verificar si ya existe canal para este portal
     const existing = await getChannelAccount(portalId);
     let channelId;
 
@@ -89,31 +87,69 @@ export const setupChannel = async (req, res) => {
       console.log(`✅ Canal registrado: ${channelId}`);
     }
 
-    // Crear cuenta de canal con inboxId (requerido por HubSpot)
     const account = await customChannels.createChannelAccount(channelId, {
       displayName: displayName || `WhatsApp ${formattedPhone}`,
       phoneNumber: formattedPhone,
       inboxId
     });
 
-    await saveChannelAccount(portalId, channelId, account.id, inboxId, phoneNumberId, formattedPhone);
+    // Datos de provider a guardar
+    const providerData = { provider };
 
-    // Si usamos Gupshup Partner: crear App, configurar webhook y guardar credenciales
-    let gupshupAppId;
-    if (isGupshup()) {
-      const whatsappWebhookUrl = `${process.env.WEBHOOK_BASE_URL}/whatsapp-webhook?portalId=${portalId}`;
+    if (provider === 'evolution') {
+      // Si se pasó instancia existente, usarla; si no, crear nueva en EvolutionAPI
+      const instanceName = evolutionInstance || `portal_${portalId}_${formattedPhone}`;
+      let instanceId = null;
+      let instanceApikey = null;
+
+      try {
+        const whatsappWebhookUrl = `${process.env.WEBHOOK_BASE_URL}/whatsapp-webhook?portalId=${portalId}&channelAccountId=${account.id}`;
+        const evoResponse = await fetch(`${process.env.EVOLUTION_API_URL}/instance/create`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'apikey': process.env.EVOLUTION_API_KEY },
+          body: JSON.stringify({
+            instanceName,
+            integration: 'WHATSAPP-BAILEYS',
+            qrcode: true,
+            webhook: {
+              url: whatsappWebhookUrl,
+              byEvents: false,
+              base64: false,
+              events: ['MESSAGES_UPSERT', 'CONNECTION_UPDATE', 'QRCODE_UPDATED']
+            }
+          })
+        });
+        const evoData = await evoResponse.json();
+        instanceId = evoData.instance?.instanceId || null;
+        instanceApikey = evoData.hash?.apikey || null;
+        console.log(`✅ Instancia Evolution creada: ${instanceName} (id: ${instanceId})`);
+      } catch (evoErr) {
+        console.warn(`⚠️ No se pudo crear instancia Evolution automáticamente: ${evoErr.message}`);
+      }
+
+      providerData.evolutionInstance = instanceName;
+      providerData.evolutionInstanceId = instanceId;
+      providerData.evolutionApikey = instanceApikey;
+
+    } else if (provider === 'gupshup') {
+      const whatsappWebhookUrl = `${process.env.WEBHOOK_BASE_URL}/whatsapp-webhook?portalId=${portalId}&channelAccountId=${account.id}`;
       const partner = new GupshupPartnerService();
       const gupshupApp = await partner.createApp({
         displayName: displayName || `WhatsApp ${formattedPhone}`,
         webhookUrl: whatsappWebhookUrl
       });
-      gupshupAppId = gupshupApp.id || gupshupApp.app?.id;
+      const gupshupAppId = gupshupApp.id || gupshupApp.app?.id;
       await partner.setWebhook(gupshupAppId, whatsappWebhookUrl);
       const gupshupAppToken = await partner.getAppToken(gupshupAppId);
       const tokenExpiresAt = new Date(Date.now() + 23 * 60 * 60 * 1000);
       await saveGupshupApp(portalId, account.id, gupshupAppId, gupshupAppToken, tokenExpiresAt);
+      providerData.gupshupAppId = gupshupAppId;
+      providerData.gupshupAppToken = gupshupAppToken;
+      providerData.gupshupAppTokenExpiresAt = tokenExpiresAt;
       console.log(`✅ Gupshup App configurada para portal ${portalId}: ${gupshupAppId}`);
     }
+
+    await saveChannelAccount(portalId, channelId, account.id, inboxId, phoneNumberId, formattedPhone, providerData);
 
     res.json({
       success: true,
@@ -121,7 +157,8 @@ export const setupChannel = async (req, res) => {
       channelAccountId: account.id,
       inboxId,
       phoneNumber: formattedPhone,
-      ...(gupshupAppId && { gupshupAppId })
+      provider,
+      ...(providerData.evolutionInstance && { evolutionInstance: providerData.evolutionInstance })
     });
   } catch (error) {
     const status = error.response?.status === 409 ? 409 : 500;
@@ -133,18 +170,17 @@ export const setupChannel = async (req, res) => {
   }
 };
 
-// Listar cuentas de canal configuradas
 // GET /api/channels
 export const listChannels = async (req, res) => {
   try {
-    const accounts = await getAllChannelAccounts();
+    const portalId = req.query.portalId || null;
+    const accounts = await getAllChannelAccounts(portalId);
     res.json({ success: true, channels: accounts });
   } catch (error) {
     res.status(500).json({ error: 'Error listando canales', details: error.message });
   }
 };
 
-// Webhook que recibe todos los eventos de HubSpot Custom Channels
 // POST /hubspot-channel-webhook
 export const handleHubSpotChannelWebhook = async (req, res) => {
   res.sendStatus(200);
@@ -155,7 +191,6 @@ export const handleHubSpotChannelWebhook = async (req, res) => {
 
     switch (eventType) {
       case 'OUTGOING_CHANNEL_MESSAGE_CREATED': {
-        // Extraer datos del payload anidado de HubSpot
         const msg = req.body.message || {};
         const customerPhone = msg.recipients?.[0]?.deliveryIdentifier?.value;
         const businessPhone = msg.senders?.[0]?.deliveryIdentifier?.value;
@@ -167,51 +202,77 @@ export const handleHubSpotChannelWebhook = async (req, res) => {
           break;
         }
 
-        // Obtener credenciales WhatsApp
+        // Obtener canal exacto por channelAccountId (routing saliente preciso)
+        const channelAccount = await getChannelAccountById(String(portalId), msgChannelAccountId)
+          || await getChannelAccount(String(portalId));
+
+        if (!channelAccount) {
+          console.error(`❌ No hay cuenta de canal para portal ${portalId} / ${msgChannelAccountId}`);
+          break;
+        }
+
+        const provider = channelAccount.provider || 'evolution';
+
+        // Construir instancia WhatsApp con credenciales correctas
         let whatsapp;
-        if (isGupshup()) {
+        if (provider === 'gupshup') {
           const gupshupApp = await getGupshupApp(String(portalId));
           if (!gupshupApp) {
             console.error(`❌ No hay credenciales Gupshup para portal ${portalId}`);
             break;
           }
-          whatsapp = new WhatsAppService({
-            appId: gupshupApp.gupshup_app_id,
-            appToken: gupshupApp.gupshup_app_token
-          });
+          whatsapp = new WhatsAppService({ appId: gupshupApp.gupshup_app_id, appToken: gupshupApp.gupshup_app_token });
         } else {
-          whatsapp = new WhatsAppService();
+          // Evolution: usar apikey de instancia si está disponible, sino la global
+          whatsapp = new WhatsAppService({
+            instanceApikey: channelAccount.evolution_apikey || null,
+            instanceName: channelAccount.evolution_instance || process.env.EVOLUTION_INSTANCE
+          });
         }
 
         const phone = whatsapp.formatPhoneNumber(customerPhone);
 
-        // Verificar ventana de servicio de 24h
-        const window = await getWindowStatus(String(portalId), customerPhone);
+        const logBase = {
+          channelAccountId: msgChannelAccountId,
+          direction: 'outgoing',
+          customerPhone,
+          businessPhone: businessPhone || channelAccount.whatsapp_phone_number,
+          messageText,
+          provider
+        };
 
-        if (window.open) {
-          // Ventana abierta → enviar texto libre
+        if (provider === 'evolution') {
+          // Baileys — sin restricción de ventana de servicio
           await whatsapp.sendTextMessage(phone, messageText);
-          console.log(`✅ Mensaje libre enviado a ${phone}`);
+          console.log(`✅ Mensaje enviado via Evolution a ${phone}`);
+          await insertLog(String(portalId), { ...logBase, status: 'success', eventType: 'MESSAGE_SENT' });
+
         } else {
-          // Ventana cerrada → solo se permiten templates
-          const templateCmd = parseTemplateCommand(messageText);
+          // Gupshup / Cloud API — verificar ventana de 24h
+          const businessPhoneKey = businessPhone || channelAccount.whatsapp_phone_number;
+          const window = await getWindowStatus(String(portalId), customerPhone, businessPhoneKey);
 
-          if (templateCmd) {
-            // El agente usó el comando /plantilla
-            await whatsapp.sendTemplateMessage(phone, templateCmd.templateName, 'es', templateCmd.params);
-            console.log(`✅ Template '${templateCmd.templateName}' enviado a ${phone}`);
+          if (window.open) {
+            await whatsapp.sendTextMessage(phone, messageText);
+            console.log(`✅ Mensaje libre enviado a ${phone}`);
+            await insertLog(String(portalId), { ...logBase, status: 'success', eventType: 'MESSAGE_SENT' });
           } else {
-            // El agente escribió texto libre con ventana cerrada → notificar
-            console.warn(`⚠️ Ventana cerrada para ${phone} — mensaje no enviado`);
+            const templateCmd = parseTemplateCommand(messageText);
 
-            const channelAccount = await getChannelAccount(String(portalId));
-            if (channelAccount) {
+            if (templateCmd) {
+              await whatsapp.sendTemplateMessage(phone, templateCmd.templateName, 'es', templateCmd.params);
+              console.log(`✅ Template '${templateCmd.templateName}' enviado a ${phone}`);
+              await insertLog(String(portalId), { ...logBase, status: 'success', eventType: 'TEMPLATE_SENT' });
+            } else {
+              console.warn(`⚠️ Ventana cerrada para ${phone} — mensaje no enviado`);
+              await insertLog(String(portalId), { ...logBase, status: 'blocked', eventType: 'WINDOW_CLOSED' });
+
               const accessToken = await getValidAccessToken(String(portalId));
               const customChannels = new CustomChannelsService(accessToken);
               await customChannels.publishSystemNotification(channelAccount.channel_id, {
                 channelAccountId: msgChannelAccountId,
                 customerPhone,
-                businessPhone: businessPhone || channelAccount.whatsapp_phone_number,
+                businessPhone: businessPhoneKey,
                 text: [
                   '⚠️ Ventana de servicio de 24h cerrada.',
                   'El cliente no puede recibir mensajes libres.',
