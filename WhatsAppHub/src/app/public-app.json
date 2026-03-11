@@ -27,6 +27,9 @@
     "optionalScopes": [],
     "conditionallyRequiredScopes": []
   },
+  "settingsPage": {
+    "url": "https://whatsapphub.cloud/auth/login?portalId={portalId}"
+  },
   "support": {
     "supportEmail": "support@example.com",
     "documentationUrl": "https://example.com/docs",
