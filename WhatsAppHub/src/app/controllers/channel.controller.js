@@ -227,10 +227,11 @@ export const handleHubSpotChannelWebhook = async (req, res) => {
           }
           whatsapp = new WhatsAppService({ appId: gupshupApp.gupshup_app_id, appToken: gupshupApp.gupshup_app_token });
         } else {
-          // Evolution: usar apikey de instancia si está disponible, sino la global
+          // Evolution: usar credenciales de instancia si están disponibles, sino fallback a env vars
           whatsapp = new WhatsAppService({
-            instanceApikey: channelAccount.evolution_apikey || null,
-            instanceName: channelAccount.evolution_instance || process.env.EVOLUTION_INSTANCE
+            provider:  'evolution',
+            apiKey:    channelAccount.evolution_apikey   || process.env.EVOLUTION_API_KEY,
+            instance:  channelAccount.evolution_instance || process.env.EVOLUTION_INSTANCE
           });
         }
 

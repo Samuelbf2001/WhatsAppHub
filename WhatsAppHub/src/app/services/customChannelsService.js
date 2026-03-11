@@ -55,25 +55,30 @@ export default class CustomChannelsService {
    * Usa modelo DELIVERY_IDENTIFIER: integrationThreadId debe ser null.
    * channelAccountId es REQUERIDO por HubSpot para asociar el mensaje.
    */
-  async publishIncomingMessage(channelId, { channelAccountId, senderPhone, senderName, recipientPhone, messageText, timestamp }) {
+  async publishIncomingMessage(channelId, { channelAccountId, senderPhone, senderName, recipientPhone, messageText, timestamp, externalMessageId }) {
+    const body = {
+      channelAccountId,
+      integrationThreadId: null,
+      messageDirection: 'INCOMING',
+      senders: [{
+        deliveryIdentifier: { type: 'HS_PHONE_NUMBER', value: senderPhone },
+        name: senderName || senderPhone
+      }],
+      recipients: [{
+        deliveryIdentifier: { type: 'HS_PHONE_NUMBER', value: recipientPhone }
+      }],
+      text: messageText,
+      timestamp: timestamp
+        ? new Date(Number(timestamp) * 1000).toISOString()
+        : new Date().toISOString()
+    };
+
+    // externalMessageId permite deduplicación — HubSpot ignora mensajes con el mismo ID
+    if (externalMessageId) body.externalMessageId = String(externalMessageId);
+
     const { data } = await axios.post(
       `${BASE_URL}/${channelId}/messages`,
-      {
-        channelAccountId,
-        integrationThreadId: null,
-        messageDirection: 'INCOMING',
-        senders: [{
-          deliveryIdentifier: { type: 'HS_PHONE_NUMBER', value: senderPhone },
-          name: senderName || senderPhone
-        }],
-        recipients: [{
-          deliveryIdentifier: { type: 'HS_PHONE_NUMBER', value: recipientPhone }
-        }],
-        text: messageText,
-        timestamp: timestamp
-          ? new Date(Number(timestamp) * 1000).toISOString()
-          : new Date().toISOString()
-      },
+      body,
       { headers: this.headers }
     );
 

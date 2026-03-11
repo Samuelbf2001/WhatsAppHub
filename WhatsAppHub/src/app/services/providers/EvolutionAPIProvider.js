@@ -5,24 +5,27 @@ import WhatsAppProvider from './WhatsAppProvider.js';
  * Proveedor para EvolutionAPI (open source, auto-hospedado, basado en Baileys).
  * Docs: https://doc.evolution-api.com
  *
- * Variables de entorno requeridas:
- *   EVOLUTION_API_URL      → URL base del servidor (ej: https://evo.tudominio.com)
- *   EVOLUTION_API_KEY      → API key global (o por instancia)
- *   EVOLUTION_INSTANCE     → Nombre de la instancia (ej: "whatsapphub")
- *
+ * Puede recibir credenciales por instancia (multi-tenant) o usar env vars globales.
  * Notas clave:
  *   - Eventos webhook en UPPERCASE: MESSAGES_UPSERT, CONNECTION_UPDATE, etc.
  *   - Número destino sin '+': "521234567890" (EvolutionAPI agrega @s.whatsapp.net)
  *   - fromMe=true en MESSAGES_UPSERT = mensaje enviado por nosotros → ignorar
- *   - Texto puede estar en message.conversation o message.extendedTextMessage.text
+ *   - payload.sender = JID del número de negocio (la instancia)
+ *   - payload.data.key.remoteJid = JID del cliente
  */
 export default class EvolutionAPIProvider extends WhatsAppProvider {
-  constructor() {
+  /**
+   * @param {object} opts
+   * @param {string} [opts.apiUrl]   - URL base (fallback: EVOLUTION_API_URL)
+   * @param {string} [opts.apiKey]   - API key de la instancia (fallback: EVOLUTION_API_KEY)
+   * @param {string} [opts.instance] - Nombre de instancia (fallback: EVOLUTION_INSTANCE)
+   */
+  constructor({ apiUrl, apiKey, instance } = {}) {
     super();
-    this.baseUrl = process.env.EVOLUTION_API_URL?.replace(/\/$/, '');
-    this.apiKey = process.env.EVOLUTION_API_KEY;
-    this.instance = process.env.EVOLUTION_INSTANCE;
-    this.headers = {
+    this.baseUrl  = (apiUrl    || process.env.EVOLUTION_API_URL)?.replace(/\/$/, '');
+    this.apiKey   = apiKey     || process.env.EVOLUTION_API_KEY;
+    this.instance = instance   || process.env.EVOLUTION_INSTANCE;
+    this.headers  = {
       'Content-Type': 'application/json',
       'apikey': this.apiKey
     };
@@ -50,9 +53,7 @@ export default class EvolutionAPIProvider extends WhatsAppProvider {
 
   /**
    * EvolutionAPI (Baileys) no gestiona templates de Meta.
-   * Si se usa WHATSAPP-BAILEYS, enviamos el nombre del template como texto plano
-   * (útil para "reabrir" conversación con un mensaje de presentación).
-   * Si el operador migra a WHATSAPP-BUSINESS integration, templates funcionan vía Cloud API.
+   * Enviamos el nombre del template como texto plano como fallback.
    */
   async sendTemplateMessage(to, templateName, _languageCode = 'es', params = []) {
     const body = params.length > 0
@@ -64,27 +65,27 @@ export default class EvolutionAPIProvider extends WhatsAppProvider {
 
   /**
    * Marcar mensaje como leído.
-   * Requiere el objeto key completo del mensaje (remoteJid, fromMe, id).
+   * @param {string} messageId - ID del mensaje (data.key.id)
+   * @param {string} remoteJid - JID del cliente (data.key.remoteJid)
    */
   async markMessageAsRead(messageId, remoteJid) {
-    if (!remoteJid) {
-      console.warn('[EvolutionAPI] markMessageAsRead requiere remoteJid');
+    if (!remoteJid || !messageId) {
+      console.warn('[EvolutionAPI] markMessageAsRead requiere messageId y remoteJid');
       return;
     }
-    await axios.post(
-      `${this.baseUrl}/chat/markMessageAsRead/${this.instance}`,
-      {
-        readMessages: [
-          { remoteJid, fromMe: false, id: messageId }
-        ]
-      },
-      { headers: this.headers }
-    );
+    try {
+      await axios.post(
+        `${this.baseUrl}/chat/markMessageAsRead/${this.instance}`,
+        { readMessages: [{ remoteJid, fromMe: false, id: messageId }] },
+        { headers: this.headers }
+      );
+    } catch (err) {
+      console.warn(`[EvolutionAPI] No se pudo marcar como leído: ${err.message}`);
+    }
   }
 
   /**
    * Verificar si un número tiene WhatsApp.
-   * @returns {Promise<boolean>}
    */
   async checkNumberExists(phone) {
     const number = phone.replace(/^\+/, '');
@@ -97,8 +98,7 @@ export default class EvolutionAPIProvider extends WhatsAppProvider {
   }
 
   /**
-   * Configurar el webhook de esta instancia para apuntar a WhatsAppHub.
-   * Llamar durante el setup inicial o cuando cambie la URL del servidor.
+   * Configurar el webhook de esta instancia.
    */
   async setWebhook(webhookUrl) {
     await axios.post(
@@ -118,18 +118,21 @@ export default class EvolutionAPIProvider extends WhatsAppProvider {
   /**
    * Parsear el webhook de EvolutionAPI al formato estándar de WhatsAppHub.
    *
-   * Estructura de entrada:
+   * Payload de entrada (MESSAGES_UPSERT):
    * {
-   *   event: "MESSAGES_UPSERT",         ← SIEMPRE en UPPERCASE
-   *   instance: "whatsapphub",
+   *   event: "MESSAGES_UPSERT",
+   *   instance: "instancia",
+   *   sender: "5219876543210@s.whatsapp.net",   ← número del NEGOCIO
    *   data: {
-   *     key: { remoteJid, fromMe, id },
+   *     key: { remoteJid: "5211234567890@s.whatsapp.net", fromMe: false, id: "ABC" },
    *     pushName: "Juan",
-   *     message: { conversation | extendedTextMessage: { text } },
-   *     messageType: "conversation",
+   *     message: { conversation | extendedTextMessage: { text } | imageMessage | ... },
+   *     messageType: "conversation" | "imageMessage" | "videoMessage" | ...,
    *     messageTimestamp: 1709000000
    *   }
    * }
+   *
+   * Retorna null si debe ignorarse (fromMe=true, grupo, evento no relevante).
    */
   processIncomingWebhook(payload) {
     try {
@@ -144,23 +147,70 @@ export default class EvolutionAPIProvider extends WhatsAppProvider {
       // Ignorar mensajes de grupos
       if (data.key?.remoteJid?.endsWith('@g.us')) return null;
 
-      // Extraer texto (puede estar en dos propiedades distintas)
-      const text =
-        data.message?.conversation ||
-        data.message?.extendedTextMessage?.text ||
-        null;
+      const remoteJid   = data.key?.remoteJid || '';
+      const businessJid = payload.sender || '';
+      const rawPhone    = remoteJid.replace('@s.whatsapp.net', '');
+      const rawBusiness = businessJid.replace('@s.whatsapp.net', '');
+      const messageType = data.messageType || 'conversation';
 
-      if (!text) return null; // Ignorar media, stickers, reactions, etc.
+      // --- Extraer texto según tipo de mensaje ---
+      let text = null;
+      let mediaType = null;
 
-      const rawPhone = data.key?.remoteJid?.replace('@s.whatsapp.net', '') || '';
+      if (messageType === 'conversation' || messageType === 'extendedTextMessage') {
+        text =
+          data.message?.conversation ||
+          data.message?.extendedTextMessage?.text ||
+          null;
+
+      } else if (messageType === 'imageMessage') {
+        const caption = data.message?.imageMessage?.caption;
+        text = caption ? `📷 Imagen: ${caption}` : '📷 [Imagen recibida]';
+        mediaType = 'image';
+
+      } else if (messageType === 'videoMessage') {
+        const caption = data.message?.videoMessage?.caption;
+        text = caption ? `🎥 Video: ${caption}` : '🎥 [Video recibido]';
+        mediaType = 'video';
+
+      } else if (messageType === 'audioMessage' || messageType === 'pttMessage') {
+        text = '🎵 [Nota de voz recibida]';
+        mediaType = 'audio';
+
+      } else if (messageType === 'documentMessage') {
+        const title = data.message?.documentMessage?.title || 'archivo';
+        text = `📄 [Documento: ${title}]`;
+        mediaType = 'document';
+
+      } else if (messageType === 'stickerMessage') {
+        text = '🎭 [Sticker recibido]';
+        mediaType = 'sticker';
+
+      } else if (messageType === 'locationMessage') {
+        const loc = data.message?.locationMessage;
+        text = loc
+          ? `📍 Ubicación: ${loc.degreesLatitude}, ${loc.degreesLongitude}`
+          : '📍 [Ubicación recibida]';
+        mediaType = 'location';
+
+      } else {
+        // Tipo no reconocido
+        text = `📎 [Mensaje no compatible: ${messageType}]`;
+        mediaType = 'unknown';
+      }
+
+      if (!text) text = '📎 [Mensaje no compatible]';
 
       return {
-        messageId: data.key?.id,
-        phoneNumber: `+${rawPhone}`,        // Normalizar a E.164
-        contactName: data.pushName || null,
+        messageId:    data.key?.id,
+        remoteJid,                          // JID completo del cliente (para markAsRead)
+        phoneNumber:  rawPhone ? `+${rawPhone}` : null,   // E.164
+        businessPhone: rawBusiness ? `+${rawBusiness}` : null, // número del negocio
+        contactName:  data.pushName || null,
         text,
-        timestamp: data.messageTimestamp,
-        type: 'text'
+        mediaType,                          // null = texto, "image"|"video"|etc. = media
+        timestamp:    data.messageTimestamp,
+        type:         mediaType ? 'media' : 'text'
       };
     } catch {
       return null;
