@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Conectar WhatsApp — WhatsFull</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --navy:       #0a1f2e;
+      --navy-2:     #1d3045;
+      --teal:       #14c8b4;
+      --teal-light: #1ee8d2;
+      --orange:     #f96040;
+      --success:    #10b981;
+      --white:      #ffffff;
+      --gray-50:    #f8fafc;
+      --gray-100:   #f1f5f9;
+      --gray-400:   #94a3b8;
+      --gray-600:   #475569;
+      --radius-md:  12px;
+      --radius-lg:  20px;
+      --shadow-card: 0 12px 40px rgba(0,0,0,.07);
+      --transition: all 0.25s ease;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--gray-50);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── HEADER ── */
+    .header {
+      background: var(--navy);
+      padding: 20px 32px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .header-logo {
+      width: 36px; height: 36px;
+      background: linear-gradient(135deg, var(--teal), var(--teal-light));
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .header-logo svg { width: 20px; height: 20px; fill: var(--navy); }
+    .header-title {
+      font-family: 'Poppins', sans-serif;
+      font-weight: 700;
+      font-size: 1.1rem;
+      color: var(--white);
+    }
+    .header-subtitle {
+      font-size: 0.75rem;
+      color: rgba(255,255,255,0.5);
+      margin-left: auto;
+    }
+
+    /* ── MAIN ── */
+    .main {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 40px 16px;
+    }
+
+    .card {
+      background: var(--white);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-card);
+      width: 100%;
+      max-width: 480px;
+      overflow: hidden;
+    }
+
+    .card-hero {
+      background: linear-gradient(135deg, var(--navy) 0%, var(--navy-2) 100%);
+      padding: 32px;
+      position: relative;
+      overflow: hidden;
+    }
+    .card-hero::before {
+      content: '';
+      position: absolute;
+      top: -40px; right: -40px;
+      width: 160px; height: 160px;
+      background: radial-gradient(circle, rgba(20,200,180,.15) 0%, transparent 70%);
+      border-radius: 50%;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(20,200,180,.12);
+      border: 1px solid rgba(20,200,180,.25);
+      color: var(--teal-light);
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      padding: 4px 10px;
+      border-radius: 100px;
+      margin-bottom: 16px;
+    }
+    .badge-dot {
+      width: 6px; height: 6px;
+      background: var(--teal);
+      border-radius: 50%;
+      box-shadow: 0 0 6px var(--teal);
+    }
+
+    .card-hero h1 {
+      font-family: 'Poppins', sans-serif;
+      font-size: clamp(1.3rem, 4vw, 1.6rem);
+      font-weight: 700;
+      color: var(--white);
+      line-height: 1.3;
+      margin-bottom: 8px;
+    }
+    .card-hero p {
+      font-size: 0.875rem;
+      color: rgba(255,255,255,0.6);
+      line-height: 1.6;
+    }
+
+    /* ── STEPS ── */
+    .steps {
+      display: flex;
+      gap: 8px;
+      margin-top: 20px;
+    }
+    .step {
+      flex: 1;
+      height: 3px;
+      background: rgba(255,255,255,0.15);
+      border-radius: 2px;
+      transition: var(--transition);
+    }
+    .step.active {
+      background: linear-gradient(90deg, var(--teal), var(--teal-light));
+    }
+
+    /* ── FORM ── */
+    .card-body { padding: 32px; }
+
+    .form-group { margin-bottom: 20px; }
+
+    label {
+      display: block;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--gray-600);
+      margin-bottom: 6px;
+      letter-spacing: 0.02em;
+    }
+
+    input, select {
+      width: 100%;
+      padding: 11px 14px;
+      border: 1.5px solid var(--gray-100);
+      border-radius: var(--radius-md);
+      font-family: 'Inter', sans-serif;
+      font-size: 0.9rem;
+      color: var(--navy);
+      background: var(--gray-50);
+      transition: var(--transition);
+      outline: none;
+    }
+    input:focus, select:focus {
+      border-color: var(--teal);
+      background: var(--white);
+      box-shadow: 0 0 0 3px rgba(20,200,180,.1);
+    }
+    input::placeholder { color: var(--gray-400); }
+
+    .input-hint {
+      font-size: 0.72rem;
+      color: var(--gray-400);
+      margin-top: 4px;
+    }
+
+    .phone-row {
+      display: flex;
+      gap: 8px;
+    }
+    .phone-row select { width: 110px; flex-shrink: 0; }
+    .phone-row input { flex: 1; }
+
+    /* ── DIVIDER ── */
+    .divider {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin: 8px 0 20px;
+      color: var(--gray-400);
+      font-size: 0.75rem;
+    }
+    .divider::before, .divider::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--gray-100);
+    }
+
+    /* ── BUTTON ── */
+    .btn-primary {
+      width: 100%;
+      padding: 13px;
+      background: linear-gradient(135deg, var(--teal) 0%, var(--teal-light) 100%);
+      color: var(--navy);
+      font-family: 'Poppins', sans-serif;
+      font-weight: 700;
+      font-size: 0.95rem;
+      border: none;
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      box-shadow: 0 8px 32px rgba(20,200,180,.35);
+      transition: var(--transition);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 12px 40px rgba(20,200,180,.5);
+    }
+    .btn-primary:active { transform: translateY(0); }
+    .btn-primary:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    /* ── ALERT ── */
+    .alert {
+      padding: 12px 16px;
+      border-radius: var(--radius-md);
+      font-size: 0.82rem;
+      margin-bottom: 20px;
+      display: none;
+    }
+    .alert.error {
+      background: rgba(249,96,64,.08);
+      border: 1px solid rgba(249,96,64,.2);
+      color: #c0392b;
+    }
+    .alert.success {
+      background: rgba(16,185,129,.08);
+      border: 1px solid rgba(16,185,129,.2);
+      color: #065f46;
+    }
+    .alert.show { display: block; }
+
+    /* ── INFO BOX ── */
+    .info-box {
+      background: var(--gray-50);
+      border: 1px solid var(--gray-100);
+      border-radius: var(--radius-md);
+      padding: 14px 16px;
+      margin-bottom: 20px;
+      font-size: 0.8rem;
+      color: var(--gray-600);
+      line-height: 1.6;
+    }
+    .info-box strong { color: var(--navy); }
+
+    /* ── SPINNER ── */
+    .spinner {
+      width: 18px; height: 18px;
+      border: 2px solid rgba(10,31,46,.3);
+      border-top-color: var(--navy);
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+      display: none;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+<header class="header">
+  <div class="header-logo">
+    <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+      <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/>
+      <path d="M12 0C5.373 0 0 5.373 0 12c0 2.125.558 4.122 1.532 5.856L0 24l6.335-1.525A11.945 11.945 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.818a9.818 9.818 0 01-5.003-1.37l-.36-.213-3.76.906.949-3.668-.234-.375A9.818 9.818 0 1112 21.818z"/>
+    </svg>
+  </div>
+  <span class="header-title">WhatsFull</span>
+  <span class="header-subtitle">Powered by HubSpot Custom Channels</span>
+</header>
+
+<main class="main">
+  <div class="card">
+    <div class="card-hero">
+      <div class="badge">
+        <span class="badge-dot"></span>
+        Conexión WhatsApp
+      </div>
+      <h1>Conecta tu número de WhatsApp</h1>
+      <p>Vincula tu número con HubSpot para gestionar conversaciones directamente desde tu inbox.</p>
+      <div class="steps">
+        <div class="step active" id="step1"></div>
+        <div class="step" id="step2"></div>
+        <div class="step" id="step3"></div>
+      </div>
+    </div>
+
+    <div class="card-body">
+      <div class="alert error" id="alert-error"></div>
+      <div class="alert success" id="alert-success"></div>
+
+      <form id="setup-form">
+        <input type="hidden" id="portalId" name="portalId" />
+        <input type="hidden" id="redirectUrl" name="redirectUrl" />
+
+        <div class="form-group">
+          <label for="displayName">Nombre del canal</label>
+          <input type="text" id="displayName" name="displayName"
+            placeholder="Ej. Soporte WhatsApp" required />
+          <span class="input-hint">Nombre que verán los agentes en el inbox.</span>
+        </div>
+
+        <div class="form-group">
+          <label for="phoneNumber">Número de WhatsApp</label>
+          <div class="phone-row">
+            <select id="countryCode" name="countryCode">
+              <option value="52">🇲🇽 +52</option>
+              <option value="1">🇺🇸 +1</option>
+              <option value="57">🇨🇴 +57</option>
+              <option value="54">🇦🇷 +54</option>
+              <option value="56">🇨🇱 +56</option>
+              <option value="51">🇵🇪 +51</option>
+              <option value="34">🇪🇸 +34</option>
+              <option value="55">🇧🇷 +55</option>
+            </select>
+            <input type="tel" id="phoneNumber" name="phoneNumber"
+              placeholder="1234567890" required />
+          </div>
+          <span class="input-hint">Sin el código de país. Solo dígitos.</span>
+        </div>
+
+        <div class="form-group">
+          <label for="inboxId">Inbox de HubSpot</label>
+          <select id="inboxId" name="inboxId" required>
+            <option value="">Cargando inboxes…</option>
+          </select>
+          <span class="input-hint">Conversaciones de WhatsApp llegarán a este inbox.</span>
+        </div>
+
+        <div class="divider">configuración avanzada</div>
+
+        <div class="form-group">
+          <label for="evolutionInstance">Instancia Evolution (opcional)</label>
+          <input type="text" id="evolutionInstance" name="evolutionInstance"
+            placeholder="Ej. cliente_soporte" />
+          <span class="input-hint">Si ya tienes una instancia creada en EvolutionAPI. Si no, se crea automáticamente.</span>
+        </div>
+
+        <div class="info-box">
+          <strong>¿Qué sucede al conectar?</strong><br />
+          Se crea una cuenta de canal en HubSpot y se vincula con tu instancia de WhatsApp.
+          Los mensajes entrantes aparecerán en el inbox seleccionado.
+        </div>
+
+        <button type="submit" class="btn-primary" id="submit-btn">
+          <div class="spinner" id="spinner"></div>
+          <span id="btn-text">Conectar WhatsApp</span>
+        </button>
+      </form>
+    </div>
+  </div>
+</main>
+
+<script>
+  const params = new URLSearchParams(window.location.search);
+  const portalId    = params.get('portalId')    || '';
+  const redirectUrl = params.get('redirectUrl') || '';
+
+  document.getElementById('portalId').value    = portalId;
+  document.getElementById('redirectUrl').value = redirectUrl;
+
+  // Obtener channelId configurado en el servidor
+  let existingChannelId = null;
+  (async () => {
+    try {
+      const cfg = await fetch('/api/channel-config').then(r => r.json());
+      existingChannelId = cfg.channelId || null;
+    } catch {}
+  })();
+
+  // Cargar inboxes del portal
+  async function loadInboxes() {
+    const select = document.getElementById('inboxId');
+    try {
+      const res = await fetch(`/api/channels/inboxes?portalId=${portalId}`);
+      const data = await res.json();
+      select.innerHTML = '';
+      if (data.inboxes && data.inboxes.length > 0) {
+        data.inboxes.forEach(inbox => {
+          const opt = document.createElement('option');
+          opt.value = inbox.id;
+          opt.textContent = inbox.name;
+          select.appendChild(opt);
+        });
+      } else {
+        select.innerHTML = '<option value="">No hay inboxes disponibles</option>';
+      }
+    } catch {
+      select.innerHTML = '<option value="">Error cargando inboxes</option>';
+    }
+  }
+
+  if (portalId) loadInboxes();
+
+  // Animación de steps
+  function setStep(n) {
+    ['step1','step2','step3'].forEach((id, i) => {
+      document.getElementById(id).classList.toggle('active', i < n);
+    });
+  }
+
+  function showAlert(type, msg) {
+    const el = document.getElementById(`alert-${type}`);
+    el.textContent = msg;
+    el.classList.add('show');
+  }
+
+  function hideAlerts() {
+    document.querySelectorAll('.alert').forEach(el => el.classList.remove('show'));
+  }
+
+  document.getElementById('setup-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    hideAlerts();
+    setStep(2);
+
+    const btn = document.getElementById('submit-btn');
+    const spinner = document.getElementById('spinner');
+    const btnText = document.getElementById('btn-text');
+
+    btn.disabled = true;
+    spinner.style.display = 'block';
+    btnText.textContent = 'Conectando…';
+
+    const countryCode = document.getElementById('countryCode').value;
+    const phoneRaw    = document.getElementById('phoneNumber').value.replace(/\D/g,'');
+    const phoneNumber = `+${countryCode}${phoneRaw}`;
+
+    const body = {
+      portalId,
+      phoneNumberId:      `wp_${countryCode}${phoneRaw}`,
+      phoneNumber,
+      inboxId:            document.getElementById('inboxId').value,
+      displayName:        document.getElementById('displayName').value,
+      evolutionInstance:  document.getElementById('evolutionInstance').value || undefined,
+      ...(existingChannelId && { existingChannelId })
+    };
+
+    try {
+      const res = await fetch('/api/channels/setup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) throw new Error(data.details || data.error || 'Error desconocido');
+
+      setStep(3);
+      showAlert('success', '✅ Canal conectado correctamente. Redirigiendo a HubSpot…');
+
+      setTimeout(() => {
+        if (redirectUrl) {
+          window.location.href = redirectUrl;
+        } else {
+          btnText.textContent = '¡Listo!';
+        }
+      }, 1800);
+
+    } catch (err) {
+      setStep(1);
+      showAlert('error', `❌ ${err.message}`);
+      btn.disabled = false;
+      spinner.style.display = 'none';
+      btnText.textContent = 'Conectar WhatsApp';
+    }
+  });
+</script>
+</body>
+</html>
