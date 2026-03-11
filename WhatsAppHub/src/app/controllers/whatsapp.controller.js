@@ -2,6 +2,7 @@ import dotenv from 'dotenv';
 import WhatsAppService from '../services/whatsappService.js';
 import HubSpotService from '../services/hubspotService.js';
 import CustomChannelsService from '../services/customChannelsService.js';
+import { addToBuffer, mergeMessages } from '../services/messageBuffer.js';
 import { getValidAccessToken } from './hubspot.controller.js';
 import {
   getChannelAccount,
@@ -51,12 +52,56 @@ function buildWhatsAppService(channelAccount) {
     });
   }
 
-  // Gupshup: credenciales vienen del channelAccount
   return new WhatsAppService({
     provider: 'gupshup',
     appId:    channelAccount.gupshup_app_id,
     appToken: channelAccount.gupshup_app_token
   });
+}
+
+/**
+ * Publicar mensajes (uno o varios del buffer) en HubSpot y actualizar estado.
+ * Se llama cuando el buffer del usuario se vacía (timer vence).
+ */
+async function flushToHubSpot(messages, channelAccount, portalId) {
+  const merged = mergeMessages(messages);
+
+  console.log(`📤 Flush buffer [${messages.length} msg] → HubSpot: ${merged.phoneNumber} "${merged.text.slice(0, 60)}${merged.text.length > 60 ? '…' : ''}"`);
+
+  const accessToken = await getValidAccessToken(portalId);
+
+  // Garantizar que el contacto exista
+  const hubspot = new HubSpotService(accessToken);
+  await hubspot.findOrCreateContactByPhone(merged.phoneNumber, merged.contactName);
+
+  // Publicar en HubSpot Inbox
+  const customChannels = new CustomChannelsService(accessToken);
+  await customChannels.publishIncomingMessage(channelAccount.channel_id, {
+    channelAccountId:  channelAccount.channel_account_id,
+    senderPhone:       merged.phoneNumber,
+    senderName:        merged.contactName || merged.phoneNumber,
+    recipientPhone:    channelAccount.whatsapp_phone_number,
+    messageText:       merged.text,
+    timestamp:         merged.timestamp,
+    externalMessageId: merged.messageId   // ID del último mensaje del grupo
+  });
+
+  // Actualizar ventana de servicio
+  await updateServiceWindow(portalId, merged.phoneNumber, channelAccount.whatsapp_phone_number);
+
+  // Log
+  await insertLog(portalId, {
+    channelAccountId: channelAccount.channel_account_id,
+    direction:        'incoming',
+    customerPhone:    merged.phoneNumber,
+    businessPhone:    channelAccount.whatsapp_phone_number,
+    messageText:      merged.text,
+    status:           'success',
+    eventType:        messages.length > 1 ? 'MESSAGE_BATCH_RECEIVED' : 'MESSAGE_RECEIVED',
+    provider:         channelAccount.provider || 'evolution'
+  });
+
+  console.log(`✅ Publicado en HubSpot Inbox: portal ${portalId}, canal ${channelAccount.channel_account_id} (${messages.length} msgs agrupados)`);
 }
 
 // GET /whatsapp-webhook — verificación de webhook (Meta/Gupshup)
@@ -73,7 +118,7 @@ export const verifyWebhook = (req, res) => {
 
 // POST /whatsapp-webhook — recibe mensajes entrantes de WhatsApp
 export const receiveMessage = async (req, res) => {
-  // Responder 200 inmediatamente (EvolutionAPI y otros no esperan respuesta)
+  // Responder 200 inmediatamente (EvolutionAPI no espera respuesta)
   res.sendStatus(200);
 
   const portalId = req.query.portalId || process.env.HUBSPOT_PORTAL_ID;
@@ -104,45 +149,14 @@ export const receiveMessage = async (req, res) => {
 
     console.log(`📨 Mensaje entrante [${channelAccount.provider}] ${messageData.phoneNumber} → "${messageData.text}" (tipo: ${messageData.type})`);
 
-    const accessToken = await getValidAccessToken(portalId);
-
-    // 4. Garantizar que el contacto exista en HubSpot antes de publicar
-    const hubspot = new HubSpotService(accessToken);
-    await hubspot.findOrCreateContactByPhone(messageData.phoneNumber, messageData.contactName);
-
-    // 5. Publicar en HubSpot Inbox via Custom Channels API
-    const customChannels = new CustomChannelsService(accessToken);
-    await customChannels.publishIncomingMessage(channelAccount.channel_id, {
-      channelAccountId: channelAccount.channel_account_id,
-      senderPhone:      messageData.phoneNumber,
-      senderName:       messageData.contactName || messageData.phoneNumber,
-      recipientPhone:   channelAccount.whatsapp_phone_number,
-      messageText:      messageData.text,
-      timestamp:        messageData.timestamp,
-      externalMessageId: messageData.messageId
-    });
-
-    // 6. Marcar mensaje como leído en WhatsApp
+    // 4. Marcar como leído de inmediato (no esperar el buffer)
     if (messageData.messageId && messageData.remoteJid) {
-      await whatsapp.markMessageAsRead(messageData.messageId, messageData.remoteJid);
+      whatsapp.markMessageAsRead(messageData.messageId, messageData.remoteJid).catch(() => {});
     }
 
-    // 7. Actualizar ventana de servicio (24h)
-    await updateServiceWindow(portalId, messageData.phoneNumber, channelAccount.whatsapp_phone_number);
-
-    // 8. Log
-    await insertLog(portalId, {
-      channelAccountId: channelAccount.channel_account_id,
-      direction:        'incoming',
-      customerPhone:    messageData.phoneNumber,
-      businessPhone:    channelAccount.whatsapp_phone_number,
-      messageText:      messageData.text,
-      status:           'success',
-      eventType:        'MESSAGE_RECEIVED',
-      provider:         channelAccount.provider || 'evolution'
-    });
-
-    console.log(`✅ Mensaje publicado en HubSpot Inbox para portal ${portalId} (canal: ${channelAccount.channel_account_id})`);
+    // 5. Agregar al buffer — se publicará en HubSpot cuando el timer venza
+    const bufferKey = `${channelAccount.channel_account_id}:${messageData.remoteJid}`;
+    addToBuffer(bufferKey, messageData, channelAccount, portalId, flushToHubSpot);
 
   } catch (error) {
     console.error('❌ Error procesando webhook de WhatsApp:', error.response?.data || error.message);
@@ -165,12 +179,9 @@ export const sendMessage = async (req, res) => {
     const pid = portalId || process.env.HUBSPOT_PORTAL_ID;
     const channelAccount = pid ? await getChannelAccount(String(pid)) : null;
 
-    let whatsapp;
-    if (channelAccount) {
-      whatsapp = buildWhatsAppService(channelAccount);
-    } else {
-      whatsapp = new WhatsAppService(); // fallback env vars globales
-    }
+    const whatsapp = channelAccount
+      ? buildWhatsAppService(channelAccount)
+      : new WhatsAppService();
 
     const formattedPhone = whatsapp.formatPhoneNumber(phoneNumber);
     const result = await whatsapp.sendTextMessage(formattedPhone, message);

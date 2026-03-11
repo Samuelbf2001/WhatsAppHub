@@ -136,7 +136,9 @@ export default class EvolutionAPIProvider extends WhatsAppProvider {
    */
   processIncomingWebhook(payload) {
     try {
-      if (payload.event !== 'MESSAGES_UPSERT') return null;
+      // Compatibilidad con versiones antiguas (messages.upsert) y nuevas (MESSAGES_UPSERT)
+      const event = (payload.event || '').toUpperCase().replace('.', '_');
+      if (event !== 'MESSAGES_UPSERT') return null;
 
       const data = payload.data;
       if (!data) return null;
