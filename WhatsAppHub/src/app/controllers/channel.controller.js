@@ -54,7 +54,7 @@ export const listInboxes = async (req, res) => {
 
 // POST /api/channels/setup
 export const setupChannel = async (req, res) => {
-  const { portalId, phoneNumberId, phoneNumber, inboxId, displayName, evolutionInstance } = req.body;
+  const { portalId, phoneNumberId, phoneNumber, inboxId, displayName, evolutionInstance, existingChannelId } = req.body;
 
   if (!portalId || !phoneNumberId || !phoneNumber || !inboxId) {
     return res.status(400).json({
@@ -70,11 +70,14 @@ export const setupChannel = async (req, res) => {
     const accessToken = await getValidAccessToken(portalId);
     const customChannels = new CustomChannelsService(accessToken);
 
-    // Verificar si ya existe canal para este portal
+    // Prioridad: 1) existingChannelId pasado explícitamente, 2) canal en DB, 3) crear nuevo
     const existing = await getChannelAccount(portalId);
     let channelId;
 
-    if (existing) {
+    if (existingChannelId) {
+      channelId = existingChannelId;
+      console.log(`♻️  channelId provisto manualmente: ${channelId}`);
+    } else if (existing) {
       channelId = existing.channel_id;
       console.log(`♻️  Canal existente reutilizado para portal ${portalId}: ${channelId}`);
     } else {
@@ -158,7 +161,8 @@ export const setupChannel = async (req, res) => {
       inboxId,
       phoneNumber: formattedPhone,
       provider,
-      ...(providerData.evolutionInstance && { evolutionInstance: providerData.evolutionInstance })
+      ...(providerData.evolutionInstance && { evolutionInstance: providerData.evolutionInstance }),
+      ...(providerData.evolutionApikey && { evolutionApikey: providerData.evolutionApikey })
     });
   } catch (error) {
     const status = error.response?.status === 409 ? 409 : 500;

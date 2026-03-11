@@ -1,16 +1,27 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import mainRouter from './routes/index.js';
 import { runMigrations } from '../db/migrations.js';
 
 dotenv.config();
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Servir archivos estáticos (setup UI)
+app.use(express.static(path.join(__dirname, 'public')));
+
+// Setup flow de canal — HubSpot redirige aquí desde Settings > Inbox > Connect Channel
+app.get('/channel-setup', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'channel-setup.html'));
+});
 
 app.use('/', mainRouter);
 

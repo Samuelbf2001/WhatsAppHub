@@ -12,10 +12,11 @@ export default class CustomChannelsService {
   }
 
   // Registrar el canal en HubSpot (ejecutar una sola vez al hacer setup)
-  async registerChannel({ name, webhookUrl }) {
+  async registerChannel({ name, webhookUrl, setupRedirectUrl }) {
     const { data } = await axios.post(BASE_URL, {
       name,
       webhookUrl,
+      channelAccountCreationRedirectUrl: setupRedirectUrl || `${process.env.WEBHOOK_BASE_URL}/channel-setup`,
       capabilities: {
         deliveryIdentifierTypes: ['HS_PHONE_NUMBER'],
         threadingModel: 'DELIVERY_IDENTIFIER',

@@ -2,9 +2,9 @@
   "name": "WhatsAppHub Integration",
   "uid": "whatsapphub-integration",
   "description": "Integración bidireccional entre HubSpot y WhatsApp Business para sincronizar contactos y conversaciones.",
-  "allowedUrls": ["https://whatsapphub.cloud", "https://api.hubapi.com"],
+  "allowedUrls": ["https://whatsapphub.cloud", "https://whatsfull.sixteam.pro", "https://api.hubapi.com"],
   "auth": {
-    "redirectUrls": ["http://localhost:3000/oauth-callback", "https://whatsapphub.cloud/oauth-callback"],
+    "redirectUrls": ["http://localhost:3000/oauth-callback", "https://whatsapphub.cloud/oauth-callback", "https://whatsfull.sixteam.pro/oauth-callback"],
     "requiredScopes": [
       "crm.lists.write",
       "crm.objects.companies.read",
@@ -32,15 +32,6 @@
     "documentationUrl": "https://example.com/docs",
     "supportUrl": "https://example.com/support",
     "supportPhone": "+18005555555"
-  },
-  "extensions": {
-    "crm": {
-      "cards": [
-        {
-          "file": "./extensions/example-card.json"
-        }
-      ]
-    }
   },
   "webhooks": {
     "file": "./webhooks/webhooks.json"
