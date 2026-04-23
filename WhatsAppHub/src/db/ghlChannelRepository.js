@@ -1,4 +1,4 @@
-import pool from '../app/config/database.js';
+import pool from '../config/database.js';
 
 export async function saveGHLChannelAccount(locationId, phoneNumber, providerData = {}) {
   const {

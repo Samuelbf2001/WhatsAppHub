@@ -1,4 +1,4 @@
-import pool from '../app/config/database.js';
+import pool from '../config/database.js';
 
 export async function saveGHLTokens(locationId, accessToken, refreshToken, expiresIn) {
   const expiresAt = new Date(Date.now() + expiresIn * 1000);
