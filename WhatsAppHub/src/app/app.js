@@ -23,6 +23,11 @@ app.get('/channel-setup', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'channel-setup.html'));
 });
 
+// GHL Setup — GHL redirige aquí tras OAuth para configurar el canal WhatsApp
+app.get('/ghl-setup', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'ghl-setup.html'));
+});
+
 app.use('/', mainRouter);
 
 app.use((err, req, res, next) => {
