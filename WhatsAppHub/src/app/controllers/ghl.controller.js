@@ -151,7 +151,9 @@ export const setupGHLChannel = async (req, res) => {
 
     if (provider === 'evolution') {
       const instanceName = evolutionInstance || `ghl_${locationId}_${formattedPhone}`;
-      const webhookUrl   = `${process.env.WEBHOOK_BASE_URL}/whatsapp-webhook?locationId=${locationId}`;
+      // Usar URL interna Docker si está definida (evita hairpin NAT entre contenedores)
+      const webhookBase  = process.env.WEBHOOK_INTERNAL_URL || process.env.WEBHOOK_BASE_URL;
+      const webhookUrl   = `${webhookBase}/whatsapp-webhook?locationId=${locationId}`;
       const evoBase      = process.env.EVOLUTION_API_URL;
       const evoApiKey    = process.env.EVOLUTION_API_KEY;
       let instanceId     = null;

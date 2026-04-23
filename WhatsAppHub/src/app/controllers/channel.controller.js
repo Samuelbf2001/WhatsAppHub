@@ -107,7 +107,7 @@ export const setupChannel = async (req, res) => {
       let instanceApikey = null;
 
       try {
-        const whatsappWebhookUrl = `${process.env.WEBHOOK_BASE_URL}/whatsapp-webhook?portalId=${portalId}&channelAccountId=${account.id}`;
+        const whatsappWebhookUrl = `${process.env.WEBHOOK_INTERNAL_URL || process.env.WEBHOOK_BASE_URL}/whatsapp-webhook?portalId=${portalId}&channelAccountId=${account.id}`;
         const evoResponse = await fetch(`${process.env.EVOLUTION_API_URL}/instance/create`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'apikey': process.env.EVOLUTION_API_KEY },
@@ -136,7 +136,7 @@ export const setupChannel = async (req, res) => {
       providerData.evolutionApikey = instanceApikey;
 
     } else if (provider === 'gupshup') {
-      const whatsappWebhookUrl = `${process.env.WEBHOOK_BASE_URL}/whatsapp-webhook?portalId=${portalId}&channelAccountId=${account.id}`;
+      const whatsappWebhookUrl = `${process.env.WEBHOOK_INTERNAL_URL || process.env.WEBHOOK_BASE_URL}/whatsapp-webhook?portalId=${portalId}&channelAccountId=${account.id}`;
       const partner = new GupshupPartnerService();
       const gupshupApp = await partner.createApp({
         displayName: displayName || `WhatsApp ${formattedPhone}`,
