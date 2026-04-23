@@ -300,6 +300,13 @@ export const handleGHLWebhook = async (req, res) => {
       return;
     }
 
+    // Ignorar mensajes de otros canales (SMS, Email, etc.) — solo procesar Custom (WhatsApp)
+    const messageType = body.messageType || body.messageTypeString || '';
+    if (messageType && messageType !== 'Custom' && messageType !== 'TYPE_CUSTOM') {
+      console.log(`ℹ️ GHL OutboundMessage [${messageType}] ignorado — no es canal Custom/WhatsApp`);
+      return;
+    }
+
     // GHL envía: to = número destino, body = texto del mensaje
     const phone   = body.to;
     const message = body.body;
