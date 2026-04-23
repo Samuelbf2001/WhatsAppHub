@@ -243,7 +243,9 @@ export const setupGHLChannel = async (req, res) => {
   }
 };
 
-// GET /api/ghl-company/locations?companyId= — lista locations de una company y genera sus tokens
+// GET /api/ghl-company/locations?companyId= — verifica que el company token existe
+// GHL v2 no tiene endpoint público para listar locations de una company;
+// el usuario debe ingresar el locationId manualmente.
 export const listCompanyLocations = async (req, res) => {
   const { companyId } = req.query;
   if (!companyId) return res.status(400).json({ error: 'companyId es requerido' });
@@ -253,19 +255,11 @@ export const listCompanyLocations = async (req, res) => {
     const companyTokens = await getGHLTokens(companyKey);
     if (!companyTokens) return res.status(404).json({ error: 'No hay token de company para este companyId' });
 
-    const locRes = await axios.get(`https://services.leadconnectorhq.com/companies/${companyId}/locations`, {
-      headers: {
-        Authorization: `Bearer ${companyTokens.access_token}`,
-        Version: '2021-07-28',
-      },
-      params: { limit: 100, skip: 0 },
-    });
-
-    const locations = locRes.data?.locations || locRes.data?.data || [];
-    res.json({ success: true, companyId, locations });
+    // Devolver lista vacía para que el frontend muestre el campo manual de locationId
+    res.json({ success: true, companyId, locations: [] });
   } catch (error) {
-    console.error('❌ Error listando locations GHL:', error.response?.data || error.message);
-    res.status(500).json({ error: 'Error listando locations', details: error.response?.data || error.message });
+    console.error('❌ Error verificando company token GHL:', error.message);
+    res.status(500).json({ error: 'Error verificando company', details: error.message });
   }
 };
 

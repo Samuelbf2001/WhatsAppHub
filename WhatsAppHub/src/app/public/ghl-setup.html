@@ -314,13 +314,14 @@
       <div class="alert error"   id="alert-error"></div>
       <div class="alert success" id="alert-success"></div>
 
-      <!-- PASO 1: seleccionar location (solo agency install) -->
+      <!-- PASO 1: ingresar locationId manualmente (solo agency install) -->
       <div id="section-locations" style="display:none">
-        <p class="section-title">1. Selecciona la subcuenta</p>
-        <div id="location-list-container">
-          <p class="loading-text">Cargando subcuentas…</p>
+        <p class="section-title">1. ID de la subcuenta (Sub-Account)</p>
+        <div class="form-group">
+          <label>Location ID</label>
+          <input type="text" id="locationIdInput" placeholder="dMX4yw4WB0RZFivUhgyG" />
+          <span class="input-hint">Encuéntralo en GHL → Settings → Business Info → Location ID.</span>
         </div>
-        <br>
       </div>
 
       <!-- PASO 2: canales existentes + formulario -->
@@ -415,40 +416,17 @@
     } catch {}
   }
 
-  // ── AGENCY INSTALL: mostrar lista de locations ──
+  // ── AGENCY INSTALL: mostrar campo manual de locationId ──
   if (companyId && !locationId) {
     document.getElementById('section-locations').style.display = 'block';
     document.getElementById('form-title').textContent = '2. Conectar número de WhatsApp';
 
-    fetch('/api/ghl-company/locations?companyId=' + companyId)
-      .then(r => r.json())
-      .then(data => {
-        const container = document.getElementById('location-list-container');
-        if (!data.success || !data.locations || data.locations.length === 0) {
-          container.innerHTML = '<p class="loading-text">No se encontraron subcuentas.</p>';
-          return;
-        }
-        const ul = document.createElement('div');
-        ul.className = 'location-list';
-        data.locations.forEach(loc => {
-          const item = document.createElement('div');
-          item.className = 'location-item';
-          item.innerHTML = `<div class="location-name">${loc.name}</div><div class="location-id">${loc.id}</div>`;
-          item.addEventListener('click', () => {
-            document.querySelectorAll('.location-item').forEach(el => el.classList.remove('selected'));
-            item.classList.add('selected');
-            selectedLocationId = loc.id;
-            loadExistingChannels(loc.id);
-          });
-          ul.appendChild(item);
-        });
-        container.innerHTML = '';
-        container.appendChild(ul);
-      })
-      .catch(() => {
-        document.getElementById('location-list-container').innerHTML =
-          '<p class="loading-text" style="color:#c0392b">Error cargando subcuentas.</p>';
-      });
+    // Cuando el usuario escribe el locationId, actualizar selectedLocationId y cargar canales
+    document.getElementById('locationIdInput').addEventListener('input', function() {
+      const val = this.value.trim();
+      selectedLocationId = val || '';
+      if (val.length > 5) loadExistingChannels(val);
+    });
   }
 
   // ── LOCATION INSTALL: cargar canales directamente ──
