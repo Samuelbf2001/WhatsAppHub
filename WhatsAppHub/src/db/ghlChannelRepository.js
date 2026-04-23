@@ -8,14 +8,15 @@ export async function saveGHLChannelAccount(locationId, phoneNumber, providerDat
     evolutionApikey = null,
     gupshupAppId = null,
     gupshupAppToken = null,
+    companyId = null,
   } = providerData;
 
   await pool.query(
     `INSERT INTO ghl_channel_accounts
        (location_id, whatsapp_phone_number, provider,
         evolution_instance, evolution_instance_id, evolution_apikey,
-        gupshup_app_id, gupshup_app_token)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+        gupshup_app_id, gupshup_app_token, company_id)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
      ON CONFLICT (location_id, whatsapp_phone_number) DO UPDATE SET
        provider = EXCLUDED.provider,
        evolution_instance = EXCLUDED.evolution_instance,
@@ -23,10 +24,11 @@ export async function saveGHLChannelAccount(locationId, phoneNumber, providerDat
        evolution_apikey = EXCLUDED.evolution_apikey,
        gupshup_app_id = EXCLUDED.gupshup_app_id,
        gupshup_app_token = EXCLUDED.gupshup_app_token,
+       company_id = EXCLUDED.company_id,
        authorized = TRUE`,
     [locationId, phoneNumber, provider,
      evolutionInstance, evolutionInstanceId, evolutionApikey,
-     gupshupAppId, gupshupAppToken]
+     gupshupAppId, gupshupAppToken, companyId]
   );
 }
 

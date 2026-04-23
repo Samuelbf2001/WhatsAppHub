@@ -488,7 +488,7 @@
       const res = await fetch('/api/ghl-channels/setup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ locationId: selectedLocationId, phoneNumber: phone, evolutionInstance })
+        body: JSON.stringify({ locationId: selectedLocationId, phoneNumber: phone, evolutionInstance, companyId: companyId || undefined })
       });
 
       const data = await res.json();

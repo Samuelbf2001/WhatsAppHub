@@ -141,6 +141,11 @@ export async function runMigrations() {
       );
     `);
 
+    await client.query(`
+      ALTER TABLE ghl_channel_accounts
+        ADD COLUMN IF NOT EXISTS company_id VARCHAR(100);
+    `).catch(() => {});
+
     console.log('✅ Migraciones ejecutadas correctamente');
   } catch (err) {
     console.error('❌ Error en migraciones:', err);

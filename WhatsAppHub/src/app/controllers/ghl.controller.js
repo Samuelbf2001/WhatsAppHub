@@ -138,7 +138,7 @@ export const oauthCallback = async (req, res) => {
 
 // POST /api/ghl-channels/setup — asociar número WhatsApp a un location GHL
 export const setupGHLChannel = async (req, res) => {
-  const { locationId, phoneNumber, evolutionInstance } = req.body;
+  const { locationId, phoneNumber, evolutionInstance, companyId } = req.body;
 
   if (!locationId || !phoneNumber) {
     return res.status(400).json({ error: 'locationId y phoneNumber son requeridos' });
@@ -220,6 +220,8 @@ export const setupGHLChannel = async (req, res) => {
       providerData.evolutionApikey     = instanceApikey;
     }
 
+    if (companyId) providerData.companyId = companyId;
+
     await saveGHLChannelAccount(locationId, formattedPhone, providerData);
 
     res.json({
@@ -246,15 +248,15 @@ export const listCompanyLocations = async (req, res) => {
     const companyTokens = await getGHLTokens(companyKey);
     if (!companyTokens) return res.status(404).json({ error: 'No hay token de company para este companyId' });
 
-    const locRes = await axios.get('https://services.leadconnectorhq.com/locations/search', {
+    const locRes = await axios.get(`https://services.leadconnectorhq.com/companies/${companyId}/locations`, {
       headers: {
         Authorization: `Bearer ${companyTokens.access_token}`,
         Version: '2021-07-28',
       },
-      params: { companyId, limit: 100 },
+      params: { limit: 100, skip: 0 },
     });
 
-    const locations = locRes.data?.locations || [];
+    const locations = locRes.data?.locations || locRes.data?.data || [];
     res.json({ success: true, companyId, locations });
   } catch (error) {
     console.error('❌ Error listando locations GHL:', error.response?.data || error.message);
