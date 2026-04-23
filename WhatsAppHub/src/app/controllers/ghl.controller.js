@@ -151,32 +151,66 @@ export const setupGHLChannel = async (req, res) => {
 
     if (provider === 'evolution') {
       const instanceName = evolutionInstance || `ghl_${locationId}_${formattedPhone}`;
-      let instanceId = null;
+      const webhookUrl   = `${process.env.WEBHOOK_BASE_URL}/whatsapp-webhook?locationId=${locationId}`;
+      const evoBase      = process.env.EVOLUTION_API_URL;
+      const evoApiKey    = process.env.EVOLUTION_API_KEY;
+      let instanceId     = null;
       let instanceApikey = null;
 
+      // Verificar si la instancia ya existe
+      let instanceExists = false;
       try {
-        const webhookUrl = `${process.env.WEBHOOK_BASE_URL}/whatsapp-webhook?locationId=${locationId}`;
-        const evoRes = await fetch(`${process.env.EVOLUTION_API_URL}/instance/create`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', apikey: process.env.EVOLUTION_API_KEY },
-          body: JSON.stringify({
-            instanceName,
-            integration: 'WHATSAPP-BAILEYS',
-            qrcode: true,
-            webhook: {
-              url: webhookUrl,
-              byEvents: false,
-              base64: false,
-              events: ['MESSAGES_UPSERT', 'CONNECTION_UPDATE', 'QRCODE_UPDATED'],
-            },
-          }),
+        const checkRes  = await fetch(`${evoBase}/instance/fetchInstances`, {
+          headers: { apikey: evoApiKey },
         });
-        const evoData = await evoRes.json();
-        instanceId   = evoData.instance?.instanceId || null;
-        instanceApikey = evoData.hash?.apikey || null;
-        console.log(`✅ Instancia Evolution GHL creada: ${instanceName}`);
-      } catch (evoErr) {
-        console.warn(`⚠️ No se pudo crear instancia Evolution: ${evoErr.message}`);
+        const checkData = await checkRes.json();
+        const instances = Array.isArray(checkData) ? checkData : (checkData.data || []);
+        instanceExists  = instances.some(i => i.instance?.instanceName === instanceName || i.instanceName === instanceName);
+      } catch {}
+
+      if (instanceExists) {
+        // Instancia existente — solo actualizar el webhook
+        console.log(`ℹ️ Instancia ${instanceName} ya existe, actualizando webhook...`);
+        try {
+          await fetch(`${evoBase}/webhook/set/${instanceName}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', apikey: evoApiKey },
+            body: JSON.stringify({
+              url:              webhookUrl,
+              webhook_by_events: false,
+              webhook_base64:   false,
+              events:           ['MESSAGES_UPSERT', 'CONNECTION_UPDATE', 'QRCODE_UPDATED'],
+            }),
+          });
+          console.log(`✅ Webhook actualizado para instancia existente: ${instanceName}`);
+        } catch (wErr) {
+          console.warn(`⚠️ No se pudo actualizar webhook de ${instanceName}: ${wErr.message}`);
+        }
+      } else {
+        // Instancia nueva — crear con webhook incluido
+        try {
+          const evoRes = await fetch(`${evoBase}/instance/create`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', apikey: evoApiKey },
+            body: JSON.stringify({
+              instanceName,
+              integration: 'WHATSAPP-BAILEYS',
+              qrcode: true,
+              webhook: {
+                url:      webhookUrl,
+                byEvents: false,
+                base64:   false,
+                events:   ['MESSAGES_UPSERT', 'CONNECTION_UPDATE', 'QRCODE_UPDATED'],
+              },
+            }),
+          });
+          const evoData  = await evoRes.json();
+          instanceId     = evoData.instance?.instanceId || null;
+          instanceApikey = evoData.hash?.apikey || null;
+          console.log(`✅ Instancia Evolution GHL creada: ${instanceName}`);
+        } catch (evoErr) {
+          console.warn(`⚠️ No se pudo crear instancia Evolution: ${evoErr.message}`);
+        }
       }
 
       providerData.evolutionInstance   = instanceName;
