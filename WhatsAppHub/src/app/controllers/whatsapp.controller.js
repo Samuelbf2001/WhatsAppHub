@@ -117,10 +117,12 @@ async function flushToHubSpot(messages, channelAccount, portalId) {
 async function flushToGHL(messages, channelAccount, locationId) {
   const merged = mergeMessages(messages);
 
-  console.log(`📤 Flush buffer GHL [${messages.length} msg] → ${merged.phoneNumber} "${merged.text.slice(0, 60)}${merged.text.length > 60 ? '…' : ''}"`);
+  console.log(`📤 Flush buffer GHL [${messages.length} msg] → location=${locationId} phone=${merged.phoneNumber} "${merged.text.slice(0, 60)}"`);
 
   const accessToken = await getValidGHLToken(locationId);
+  console.log(`🔑 Token GHL obtenido para ${locationId}: ${accessToken ? accessToken.slice(0,20)+'...' : 'NULL'}`);
   const contactId   = await findOrCreateGHLContact(accessToken, locationId, merged.phoneNumber);
+  console.log(`👤 ContactId GHL: ${contactId}`);
 
   await publishInboundMessageToGHL(accessToken, locationId, contactId, {
     text:      merged.text,

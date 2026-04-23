@@ -57,7 +57,7 @@ export async function publishInboundMessageToGHL(accessToken, locationId, contac
   };
 
   const payload = {
-    type: 'SMS',                     // SMS = reemplaza LC Phone, aparece en Conversations
+    type: 'Custom',
     locationId,
     contactId,
     conversationProviderId: GHL_PROVIDER_ID,
@@ -71,9 +71,15 @@ export async function publishInboundMessageToGHL(accessToken, locationId, contac
     payload.attachments = [messageData.mediaUrl];
   }
 
-  const res = await axios.post(`${GHL_BASE_URL}/conversations/messages/inbound`, payload, { headers });
-  console.log(`📥 Mensaje publicado en GHL Inbox: conversationId=${res.data?.conversationId}`);
-  return res.data;
+  console.log(`📤 Enviando a GHL:`, JSON.stringify(payload));
+  try {
+    const res = await axios.post(`${GHL_BASE_URL}/conversations/messages/inbound`, payload, { headers });
+    console.log(`📥 Mensaje publicado en GHL Inbox: conversationId=${res.data?.conversationId}`, JSON.stringify(res.data));
+    return res.data;
+  } catch (err) {
+    console.error(`❌ Error publicando en GHL:`, err.response?.status, JSON.stringify(err.response?.data));
+    throw err;
+  }
 }
 
 /**
