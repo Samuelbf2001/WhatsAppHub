@@ -11,7 +11,8 @@ dotenv.config();
 const GHL_CLIENT_ID     = process.env.GHL_CLIENT_ID;
 const GHL_CLIENT_SECRET = process.env.GHL_CLIENT_SECRET;
 const GHL_REDIRECT_URI  = process.env.GHL_REDIRECT_URI || 'https://whatsfull.sixteam.pro/ghl/oauth-callback';
-const FRONTEND_URL      = process.env.FRONTEND_URL      || 'https://whatsfull.sixteam.pro';
+// ghl-setup.html vive en el backend, no en el frontend React
+const GHL_SETUP_BASE    = process.env.GHL_SETUP_URL || process.env.WEBHOOK_BASE_URL || 'https://whatsfull.sixteam.pro';
 
 /**
  * Genera un location token a partir del company token (instalación agency).
@@ -112,7 +113,7 @@ export const oauthCallback = async (req, res) => {
       // Instalación a nivel Location — guardar directamente
       await saveGHLTokens(locationId, access_token, refresh_token, expires_in || 86400);
       console.log(`✅ GHL OAuth completado para location ${locationId}`);
-      return res.redirect(`${FRONTEND_URL}/ghl-setup?locationId=${locationId}`);
+      return res.redirect(`${GHL_SETUP_BASE}/ghl-setup?locationId=${locationId}`);
     }
 
     if (companyId) {
@@ -120,8 +121,7 @@ export const oauthCallback = async (req, res) => {
       const companyKey = `company_${companyId}`;
       await saveGHLTokens(companyKey, access_token, refresh_token, expires_in || 86400);
       console.log(`✅ GHL OAuth completado para company ${companyId} (bulk/agency install)`);
-      // Redirigir al frontend para que el usuario elija la location
-      return res.redirect(`${FRONTEND_URL}/ghl-setup?companyId=${companyId}`);
+      return res.redirect(`${GHL_SETUP_BASE}/ghl-setup?companyId=${companyId}`);
     }
 
     console.error('❌ GHL OAuth: no se recibió locationId ni companyId', tokenRes.data);
