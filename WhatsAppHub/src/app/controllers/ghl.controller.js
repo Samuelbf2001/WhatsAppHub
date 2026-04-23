@@ -11,8 +11,8 @@ dotenv.config();
 const GHL_CLIENT_ID     = process.env.GHL_CLIENT_ID;
 const GHL_CLIENT_SECRET = process.env.GHL_CLIENT_SECRET;
 const GHL_REDIRECT_URI  = process.env.GHL_REDIRECT_URI || 'https://whatsfull.sixteam.pro/ghl/oauth-callback';
-// ghl-setup.html vive en el backend, no en el frontend React
 const GHL_SETUP_BASE    = process.env.GHL_SETUP_URL || process.env.WEBHOOK_BASE_URL || 'https://whatsfull.sixteam.pro';
+const GHL_PROVIDER_ID   = process.env.GHL_CONVERSATION_PROVIDER_ID || '69ea36f789175e5da0ebc461';
 
 /**
  * Genera un location token a partir del company token (instalación agency).
@@ -300,12 +300,10 @@ export const handleGHLWebhook = async (req, res) => {
       return;
     }
 
-    console.log(`🔍 GHL OutboundMessage payload: ${JSON.stringify(body)}`);
-
-    // Ignorar mensajes de otros canales (SMS, Email, etc.) — solo procesar Custom (WhatsApp)
-    const messageType = body.messageType || body.messageTypeString || '';
-    if (messageType && messageType !== 'Custom' && messageType !== 'TYPE_CUSTOM') {
-      console.log(`ℹ️ GHL OutboundMessage [${messageType}] ignorado — no es canal Custom/WhatsApp`);
+    // Solo procesar mensajes de nuestro Custom Conversation Provider
+    const providerId = body.conversationProviderId;
+    if (providerId && providerId !== GHL_PROVIDER_ID) {
+      console.log(`ℹ️ GHL OutboundMessage de provider [${providerId}] ignorado — no es nuestro canal`);
       return;
     }
 
