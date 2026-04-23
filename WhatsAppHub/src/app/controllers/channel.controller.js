@@ -9,6 +9,7 @@ import {
   getAllChannelAccounts,
   getChannelAccount,
   getChannelAccountById,
+  getChannelAccountByInstance,
   updateAuthorized,
   deleteChannelAccount,
   saveGupshupApp,
@@ -171,6 +172,101 @@ export const setupChannel = async (req, res) => {
       error: status === 409 ? 'La cuenta de canal ya existe' : 'Error configurando canal',
       details: error.response?.data || error.message
     });
+  }
+};
+
+// DELETE /api/channels/:channelAccountId
+export const deleteChannel = async (req, res) => {
+  const { channelAccountId } = req.params;
+  const portalId = req.portalId; // inyectado por requireAuth
+
+  if (!channelAccountId) return res.status(400).json({ error: 'channelAccountId requerido' });
+
+  try {
+    const account = await getChannelAccountById(portalId, channelAccountId);
+    if (!account) return res.status(404).json({ error: 'Canal no encontrado' });
+
+    // Intentar eliminar instancia Evolution si aplica
+    if (account.provider !== 'gupshup' && account.evolution_instance) {
+      try {
+        const evoUrl = process.env.EVOLUTION_API_URL;
+        const apikey = account.evolution_apikey || process.env.EVOLUTION_API_KEY;
+        await fetch(`${evoUrl}/instance/delete/${account.evolution_instance}`, {
+          method: 'DELETE',
+          headers: { apikey },
+          signal: AbortSignal.timeout(5000)
+        });
+        console.log(`🗑️  Instancia Evolution eliminada: ${account.evolution_instance}`);
+      } catch (evoErr) {
+        console.warn(`⚠️ No se pudo eliminar instancia Evolution: ${evoErr.message}`);
+      }
+    }
+
+    await deleteChannelAccount(portalId, channelAccountId);
+    res.json({ success: true, deleted: channelAccountId });
+  } catch (error) {
+    res.status(500).json({ error: 'Error eliminando canal', details: error.message });
+  }
+};
+
+// GET /api/channels/qr/:instanceName — proxy del QR de Evolution (evita CORS en frontend)
+export const getChannelQR = async (req, res) => {
+  const { instanceName } = req.params;
+  const portalId = req.portalId;
+
+  try {
+    const account = await getChannelAccountByInstance(instanceName)
+      || await getChannelAccount(portalId);
+
+    if (!account) return res.status(404).json({ error: 'Canal no encontrado' });
+
+    const evoUrl = process.env.EVOLUTION_API_URL;
+    const apikey = account.evolution_apikey || process.env.EVOLUTION_API_KEY;
+
+    const response = await fetch(`${evoUrl}/instance/connect/${instanceName}`, {
+      headers: { apikey },
+      signal: AbortSignal.timeout(10000)
+    });
+
+    if (!response.ok) {
+      return res.status(response.status).json({ error: 'Error obteniendo QR de Evolution' });
+    }
+
+    const data = await response.json();
+    res.json(data);
+  } catch (error) {
+    res.status(500).json({ error: 'Error proxy QR', details: error.message });
+  }
+};
+
+// GET /api/channels/state/:instanceName — proxy del estado de conexión Evolution
+export const getChannelConnectionState = async (req, res) => {
+  const { instanceName } = req.params;
+  const portalId = req.portalId;
+
+  try {
+    const account = await getChannelAccountByInstance(instanceName)
+      || await getChannelAccount(portalId);
+
+    if (!account) return res.status(404).json({ error: 'Canal no encontrado' });
+
+    const evoUrl = process.env.EVOLUTION_API_URL;
+    const apikey = account.evolution_apikey || process.env.EVOLUTION_API_KEY;
+
+    const response = await fetch(`${evoUrl}/instance/connectionState/${instanceName}`, {
+      headers: { apikey },
+      signal: AbortSignal.timeout(5000)
+    });
+
+    if (!response.ok) {
+      return res.status(response.status).json({ error: 'Error consultando estado' });
+    }
+
+    const data = await response.json();
+    const state = data.instance?.state ?? 'unknown';
+    res.json({ instanceName, state, connected: state === 'open' });
+  } catch (error) {
+    res.status(500).json({ error: 'Error proxy estado', details: error.message });
   }
 };
 

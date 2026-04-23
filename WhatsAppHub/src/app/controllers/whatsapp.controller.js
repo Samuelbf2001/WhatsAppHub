@@ -4,12 +4,18 @@ import HubSpotService from '../services/hubspotService.js';
 import CustomChannelsService from '../services/customChannelsService.js';
 import { addToBuffer, mergeMessages } from '../services/messageBuffer.js';
 import { getValidAccessToken } from './hubspot.controller.js';
+import { getValidGHLToken } from './ghl.controller.js';
+import { findOrCreateGHLContact, publishInboundMessageToGHL } from '../services/ghlService.js';
 import {
   getChannelAccount,
   getChannelAccountById,
   getChannelAccountByInstance,
   getChannelAccountByGupshupAppId
 } from '../../db/channelRepository.js';
+import {
+  getGHLChannelAccount,
+  getGHLChannelAccountByInstance,
+} from '../../db/ghlChannelRepository.js';
 import { updateServiceWindow } from '../../db/serviceWindowRepository.js';
 import { insertLog } from '../../db/logRepository.js';
 
@@ -104,6 +110,38 @@ async function flushToHubSpot(messages, channelAccount, portalId) {
   console.log(`✅ Publicado en HubSpot Inbox: portal ${portalId}, canal ${channelAccount.channel_account_id} (${messages.length} msgs agrupados)`);
 }
 
+/**
+ * Publica mensajes del buffer en GHL Conversations Inbox.
+ * Se usa cuando el webhook llega con ?locationId= (canal GHL).
+ */
+async function flushToGHL(messages, channelAccount, locationId) {
+  const merged = mergeMessages(messages);
+
+  console.log(`📤 Flush buffer GHL [${messages.length} msg] → ${merged.phoneNumber} "${merged.text.slice(0, 60)}${merged.text.length > 60 ? '…' : ''}"`);
+
+  const accessToken = await getValidGHLToken(locationId);
+  const contactId   = await findOrCreateGHLContact(accessToken, locationId, merged.phoneNumber);
+
+  await publishInboundMessageToGHL(accessToken, locationId, contactId, {
+    text:      merged.text,
+    mediaUrl:  merged.mediaUrl || null,
+    timestamp: merged.timestamp,
+  });
+
+  await insertLog(locationId, {
+    channelAccountId: channelAccount.id,
+    direction:        'incoming',
+    customerPhone:    merged.phoneNumber,
+    businessPhone:    channelAccount.whatsapp_phone_number,
+    messageText:      merged.text,
+    status:           'success',
+    eventType:        messages.length > 1 ? 'MESSAGE_BATCH_RECEIVED' : 'MESSAGE_RECEIVED',
+    provider:         channelAccount.provider || 'evolution',
+  });
+
+  console.log(`✅ Publicado en GHL Inbox: location ${locationId} (${messages.length} msgs agrupados)`);
+}
+
 // GET /whatsapp-webhook — verificación de webhook (Meta/Gupshup)
 export const verifyWebhook = (req, res) => {
   const mode      = req.query['hub.mode'];
@@ -116,56 +154,65 @@ export const verifyWebhook = (req, res) => {
   res.sendStatus(403);
 };
 
-// POST /whatsapp-webhook — recibe mensajes entrantes de WhatsApp
+// POST /whatsapp-webhook — recibe mensajes entrantes de WhatsApp (HubSpot o GHL)
 export const receiveMessage = async (req, res) => {
-  // Responder 200 inmediatamente (EvolutionAPI no espera respuesta)
   res.sendStatus(200);
 
-  const portalId = req.query.portalId || process.env.HUBSPOT_PORTAL_ID;
-  if (!portalId) {
-    console.error('❌ portalId no encontrado en el webhook');
+  // Detectar si el webhook viene de un canal GHL o HubSpot
+  const locationId = req.query.locationId || null;
+  const portalId   = req.query.portalId   || process.env.HUBSPOT_PORTAL_ID;
+  const isGHL      = !!locationId;
+
+  const tenantId = isGHL ? locationId : portalId;
+  if (!tenantId) {
+    console.error('❌ Ni portalId ni locationId encontrados en el webhook');
     return;
   }
 
   try {
-    // 1. Detectar canal ANTES de parsear (necesitamos el provider)
-    const channelAccount = await detectChannelAccount(portalId, req.query, req.body);
+    let channelAccount;
+
+    if (isGHL) {
+      // Canal GHL: buscar por instancia o primer canal del location
+      channelAccount = req.body.instance
+        ? await getGHLChannelAccountByInstance(req.body.instance) || await getGHLChannelAccount(locationId)
+        : await getGHLChannelAccount(locationId);
+    } else {
+      // Canal HubSpot: lógica existente
+      channelAccount = await detectChannelAccount(portalId, req.query, req.body);
+    }
+
     if (!channelAccount) {
-      console.error(`❌ No hay cuenta de canal configurada para portal ${portalId}`);
+      console.error(`❌ No hay canal configurado para ${isGHL ? 'GHL location' : 'HubSpot portal'} ${tenantId}`);
       return;
     }
 
-    // 2. Construir servicio con credenciales del canal correcto
-    const whatsapp = buildWhatsAppService(channelAccount);
-
-    // 3. Parsear el webhook
+    const whatsapp    = buildWhatsAppService(channelAccount);
     const messageData = whatsapp.processIncomingMessage(req.body);
-    if (!messageData) return; // evento ignorado (fromMe, grupo, CONNECTION_UPDATE, etc.)
+    if (!messageData) return;
 
     if (!messageData.phoneNumber) {
       console.warn('⚠️ Mensaje sin número de teléfono, ignorando');
       return;
     }
 
-    console.log(`📨 Mensaje entrante [${channelAccount.provider}] ${messageData.phoneNumber} → "${messageData.text}" (tipo: ${messageData.type})`);
+    console.log(`📨 Mensaje entrante [${isGHL ? 'GHL' : 'HubSpot'}][${channelAccount.provider}] ${messageData.phoneNumber} → "${messageData.text}" (tipo: ${messageData.type})`);
 
-    // 4. Marcar como leído de inmediato (no esperar el buffer)
     if (messageData.messageId && messageData.remoteJid) {
       whatsapp.markMessageAsRead(messageData.messageId, messageData.remoteJid).catch(() => {});
     }
 
-    // 5. Agregar al buffer — se publicará en HubSpot cuando el timer venza
-    const bufferKey = `${channelAccount.channel_account_id}:${messageData.remoteJid}`;
-    addToBuffer(bufferKey, messageData, channelAccount, portalId, flushToHubSpot);
+    const bufferKey = `${isGHL ? 'ghl' : 'hs'}:${tenantId}:${messageData.remoteJid}`;
+    const flushFn   = isGHL ? flushToGHL : flushToHubSpot;
+    addToBuffer(bufferKey, messageData, channelAccount, tenantId, flushFn);
 
   } catch (error) {
     console.error('❌ Error procesando webhook de WhatsApp:', error.response?.data || error.message);
-
-    await insertLog(portalId, {
+    await insertLog(tenantId, {
       direction:    'incoming',
       status:       'error',
       eventType:    'ERROR',
-      errorMessage: error.message
+      errorMessage: error.message,
     }).catch(() => {});
   }
 };

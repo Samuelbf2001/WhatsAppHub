@@ -6,6 +6,7 @@ import channelRoutes from './channel.routes.js';
 import authRoutes from './auth.routes.js';
 import logsRoutes from './logs.routes.js';
 import connectionsRoutes from './connections.routes.js';
+import ghlRoutes from './ghl.routes.js';
 
 const mainRouter = Router();
 
@@ -16,5 +17,6 @@ mainRouter.use(whatsappRoutes);
 mainRouter.use(channelRoutes);
 mainRouter.use(logsRoutes);
 mainRouter.use(connectionsRoutes);
+mainRouter.use(ghlRoutes);
 
 export default mainRouter;

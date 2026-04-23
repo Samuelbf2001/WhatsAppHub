@@ -110,6 +110,37 @@ export async function runMigrations() {
         ON message_logs(portal_id, created_at DESC);
     `);
 
+    // Tabla OAuth tokens para GoHighLevel (por locationId)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS ghl_oauth_tokens (
+        id SERIAL PRIMARY KEY,
+        location_id VARCHAR(100) UNIQUE NOT NULL,
+        access_token TEXT NOT NULL,
+        refresh_token TEXT NOT NULL,
+        expires_at TIMESTAMP NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      );
+    `);
+
+    // Tabla de canales GHL (WhatsApp por location)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS ghl_channel_accounts (
+        id SERIAL PRIMARY KEY,
+        location_id VARCHAR(100) NOT NULL,
+        whatsapp_phone_number VARCHAR(30) NOT NULL,
+        provider VARCHAR(20) NOT NULL DEFAULT 'evolution',
+        evolution_instance VARCHAR(100),
+        evolution_instance_id VARCHAR(100),
+        evolution_apikey TEXT,
+        gupshup_app_id VARCHAR(100),
+        gupshup_app_token TEXT,
+        authorized BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMP DEFAULT NOW(),
+        UNIQUE(location_id, whatsapp_phone_number)
+      );
+    `);
+
     console.log('✅ Migraciones ejecutadas correctamente');
   } catch (err) {
     console.error('❌ Error en migraciones:', err);
