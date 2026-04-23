@@ -61,13 +61,16 @@ export const oauthCallback = async (req, res) => {
   if (!code) return res.status(400).send('Código OAuth faltante');
 
   try {
-    const tokenRes = await axios.post('https://services.leadconnectorhq.com/oauth/token', {
-      client_id:     GHL_CLIENT_ID,
-      client_secret: GHL_CLIENT_SECRET,
-      grant_type:    'authorization_code',
-      code,
-      redirect_uri:  GHL_REDIRECT_URI,
-    }, { headers: { 'Content-Type': 'application/json' } });
+    const tokenRes = await axios.post('https://services.leadconnectorhq.com/oauth/token',
+      new URLSearchParams({
+        client_id:     GHL_CLIENT_ID,
+        client_secret: GHL_CLIENT_SECRET,
+        grant_type:    'authorization_code',
+        code,
+        redirect_uri:  GHL_REDIRECT_URI,
+      }),
+      { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+    );
 
     const { access_token, refresh_token, expires_in, locationId } = tokenRes.data;
 
@@ -170,6 +173,13 @@ export const handleGHLWebhook = async (req, res) => {
 
   try {
     const { locationId, contactId, phone, message, type } = req.body;
+
+    // Eventos del sistema GHL (INSTALL, UNINSTALL, etc.) — ignorar silenciosamente
+    const SYSTEM_EVENTS = ['INSTALL', 'UNINSTALL', 'UPGRADE', 'DOWNGRADE'];
+    if (SYSTEM_EVENTS.includes(type)) {
+      console.log(`ℹ️ GHL sistema evento [${type}] para location ${locationId} — ignorado`);
+      return;
+    }
 
     console.log(`📤 GHL Webhook saliente [location: ${locationId}] → ${phone}: "${message?.slice(0, 60)}"`);
 
