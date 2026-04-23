@@ -146,14 +146,19 @@ export default class EvolutionAPIProvider extends WhatsAppProvider {
       // Ignorar mensajes enviados por nosotros
       if (data.key?.fromMe === true) return null;
 
-      // Ignorar mensajes de grupos
-      if (data.key?.remoteJid?.endsWith('@g.us')) return null;
+      const isGroup = data.key?.remoteJid?.endsWith('@g.us') === true;
 
       const remoteJid   = data.key?.remoteJid || '';
       const businessJid = payload.sender || '';
-      const rawPhone    = remoteJid.replace('@s.whatsapp.net', '');
-      const rawBusiness = businessJid.replace('@s.whatsapp.net', '');
       const messageType = data.messageType || 'conversation';
+
+      // Para grupos: el participante es quien envió el mensaje dentro del grupo
+      const participant    = data.participant || data.key?.participant || null;
+      const rawParticipant = participant ? participant.replace('@s.whatsapp.net', '') : null;
+
+      // phoneNumber: null para grupos (el controlador asigna el número del grupo como contacto ficticio)
+      const rawPhone    = isGroup ? null : remoteJid.replace('@s.whatsapp.net', '');
+      const rawBusiness = businessJid.replace('@s.whatsapp.net', '');
 
       // --- Extraer texto según tipo de mensaje ---
       let text = null;
@@ -212,7 +217,10 @@ export default class EvolutionAPIProvider extends WhatsAppProvider {
         text,
         mediaType,                          // null = texto, "image"|"video"|etc. = media
         timestamp:    data.messageTimestamp,
-        type:         mediaType ? 'media' : 'text'
+        type:         mediaType ? 'media' : 'text',
+        isGroup,
+        groupJid:     isGroup ? remoteJid : null,
+        participant:  isGroup ? (rawParticipant ? `+${rawParticipant}` : null) : null,
       };
     } catch {
       return null;

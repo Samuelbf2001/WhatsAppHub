@@ -191,12 +191,29 @@ export const receiveMessage = async (req, res) => {
     const messageData = whatsapp.processIncomingMessage(req.body);
     if (!messageData) return;
 
+    // Grupos: HubSpot no los soporta → ignorar; GHL sí (contacto ficticio por grupo)
+    if (messageData.isGroup) {
+      if (!isGHL) return;
+      // El número de teléfono del grupo es la parte numérica del JID (@g.us)
+      const groupNumber = messageData.groupJid?.replace('@g.us', '') || null;
+      if (!groupNumber) {
+        console.warn('⚠️ Mensaje de grupo sin JID válido, ignorando');
+        return;
+      }
+      // Usar el número del grupo como identificador del contacto ficticio
+      messageData.phoneNumber = `+${groupNumber}`;
+      // Añadir el participante al inicio del texto para identificar quién habló
+      if (messageData.participant) {
+        messageData.text = `[${messageData.participant}]: ${messageData.text}`;
+      }
+    }
+
     if (!messageData.phoneNumber) {
       console.warn('⚠️ Mensaje sin número de teléfono, ignorando');
       return;
     }
 
-    console.log(`📨 Mensaje entrante [${isGHL ? 'GHL' : 'HubSpot'}][${channelAccount.provider}] ${messageData.phoneNumber} → "${messageData.text}" (tipo: ${messageData.type})`);
+    console.log(`📨 Mensaje entrante [${isGHL ? 'GHL' : 'HubSpot'}][${channelAccount.provider}]${messageData.isGroup ? ' [GRUPO]' : ''} ${messageData.phoneNumber} → "${messageData.text}" (tipo: ${messageData.type})`);
 
     if (messageData.messageId && messageData.remoteJid) {
       whatsapp.markMessageAsRead(messageData.messageId, messageData.remoteJid).catch(() => {});
