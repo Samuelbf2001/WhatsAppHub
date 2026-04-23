@@ -14,17 +14,55 @@ const GHL_REDIRECT_URI  = process.env.GHL_REDIRECT_URI || 'https://whatsfull.six
 const FRONTEND_URL      = process.env.FRONTEND_URL      || 'https://whatsfull.sixteam.pro';
 
 /**
+ * Genera un location token a partir del company token (instalación agency).
+ */
+async function getLocationTokenFromCompany(companyId, locationId) {
+  const companyKey = `company_${companyId}`;
+  const companyTokens = await getGHLTokens(companyKey);
+  if (!companyTokens) throw new Error(`No hay company token GHL para ${companyId}`);
+
+  const res = await axios.post('https://services.leadconnectorhq.com/oauth/locationToken',
+    new URLSearchParams({ companyId, locationId }),
+    {
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Authorization: `Bearer ${companyTokens.access_token}`,
+        Version: '2021-07-28',
+      },
+    }
+  );
+
+  const { access_token, expires_in } = res.data;
+  // Guardar location token para uso futuro
+  await saveGHLTokens(locationId, access_token, companyTokens.refresh_token, expires_in || 86400);
+  console.log(`✅ Location token generado para ${locationId} desde company ${companyId}`);
+  return access_token;
+}
+
+/**
  * Obtiene un access token válido para un locationId.
+ * Si no hay token de location, busca un company token y genera uno.
  * Refresca automáticamente si está expirado.
  */
-export async function getValidGHLToken(locationId) {
-  const tokens = await getGHLTokens(locationId);
-  if (!tokens) throw new Error(`No hay tokens GHL para location ${locationId}`);
+export async function getValidGHLToken(locationId, companyId = null) {
+  let tokens = await getGHLTokens(locationId);
+
+  // Si no hay token de location pero sí companyId, generar desde company token
+  if (!tokens && companyId) {
+    return getLocationTokenFromCompany(companyId, locationId);
+  }
+
+  // Si no hay token y tampoco companyId, buscar si existe algún company token en DB
+  if (!tokens) {
+    // Intentar encontrar un company token disponible
+    const companyTokens = await getGHLTokens(`company_${locationId}`);
+    if (!companyTokens) throw new Error(`No hay tokens GHL para location ${locationId}`);
+    tokens = companyTokens;
+  }
 
   const expiresAt = new Date(tokens.expires_at).getTime();
   const now = Date.now();
 
-  // Refrescar si expira en menos de 5 minutos
   if (expiresAt - now < 5 * 60 * 1000) {
     console.log(`🔄 Refrescando token GHL para location ${locationId}`);
     const refreshed = await refreshGHLToken(tokens.refresh_token);
@@ -72,18 +110,26 @@ export const oauthCallback = async (req, res) => {
       { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
     );
 
-    const { access_token, refresh_token, expires_in, locationId } = tokenRes.data;
+    const { access_token, refresh_token, expires_in, locationId, companyId, userType, isBulkInstallation } = tokenRes.data;
 
-    if (!locationId) {
-      console.error('❌ GHL OAuth: no se recibió locationId', tokenRes.data);
-      return res.status(400).send('No se recibió locationId de GHL');
+    if (locationId) {
+      // Instalación a nivel Location — guardar directamente
+      await saveGHLTokens(locationId, access_token, refresh_token, expires_in || 86400);
+      console.log(`✅ GHL OAuth completado para location ${locationId}`);
+      return res.redirect(`${FRONTEND_URL}/ghl-setup?locationId=${locationId}`);
     }
 
-    await saveGHLTokens(locationId, access_token, refresh_token, expires_in || 86400);
-    console.log(`✅ GHL OAuth completado para location ${locationId}`);
+    if (companyId) {
+      // Instalación a nivel Agency/Company — guardar company token con prefijo "company_"
+      const companyKey = `company_${companyId}`;
+      await saveGHLTokens(companyKey, access_token, refresh_token, expires_in || 86400);
+      console.log(`✅ GHL OAuth completado para company ${companyId} (bulk/agency install)`);
+      // Redirigir al frontend para que el usuario elija la location
+      return res.redirect(`${FRONTEND_URL}/ghl-setup?companyId=${companyId}`);
+    }
 
-    // Redirigir al frontend con locationId para continuar el setup
-    res.redirect(`${FRONTEND_URL}/ghl-setup?locationId=${locationId}`);
+    console.error('❌ GHL OAuth: no se recibió locationId ni companyId', tokenRes.data);
+    return res.status(400).send('No se recibió locationId ni companyId de GHL');
   } catch (error) {
     console.error('❌ Error en GHL OAuth callback:', error.response?.data || error.message);
     res.status(500).send('Error en autenticación con GoHighLevel');
@@ -151,6 +197,32 @@ export const setupGHLChannel = async (req, res) => {
   } catch (error) {
     console.error('❌ Error en setup GHL channel:', error.message);
     res.status(500).json({ error: 'Error configurando canal GHL', details: error.message });
+  }
+};
+
+// GET /api/ghl-company/locations?companyId= — lista locations de una company y genera sus tokens
+export const listCompanyLocations = async (req, res) => {
+  const { companyId } = req.query;
+  if (!companyId) return res.status(400).json({ error: 'companyId es requerido' });
+
+  try {
+    const companyKey = `company_${companyId}`;
+    const companyTokens = await getGHLTokens(companyKey);
+    if (!companyTokens) return res.status(404).json({ error: 'No hay token de company para este companyId' });
+
+    const locRes = await axios.get('https://services.leadconnectorhq.com/locations/search', {
+      headers: {
+        Authorization: `Bearer ${companyTokens.access_token}`,
+        Version: '2021-07-28',
+      },
+      params: { companyId, limit: 100 },
+    });
+
+    const locations = locRes.data?.locations || [];
+    res.json({ success: true, companyId, locations });
+  } catch (error) {
+    console.error('❌ Error listando locations GHL:', error.response?.data || error.message);
+    res.status(500).json({ error: 'Error listando locations', details: error.response?.data || error.message });
   }
 };
 
