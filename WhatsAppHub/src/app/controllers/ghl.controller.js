@@ -52,12 +52,8 @@ export async function getValidGHLToken(locationId, companyId = null) {
     return getLocationTokenFromCompany(companyId, locationId);
   }
 
-  // Si no hay token y tampoco companyId, buscar si existe algún company token en DB
   if (!tokens) {
-    // Intentar encontrar un company token disponible
-    const companyTokens = await getGHLTokens(`company_${locationId}`);
-    if (!companyTokens) throw new Error(`No hay tokens GHL para location ${locationId}`);
-    tokens = companyTokens;
+    throw new Error(`No hay tokens GHL para location ${locationId}`);
   }
 
   const expiresAt = new Date(tokens.expires_at).getTime();
@@ -220,7 +216,16 @@ export const setupGHLChannel = async (req, res) => {
       providerData.evolutionApikey     = instanceApikey;
     }
 
-    if (companyId) providerData.companyId = companyId;
+    if (companyId) {
+      providerData.companyId = companyId;
+      // Pre-generar location token desde el company token para que esté listo al llegar mensajes
+      try {
+        await getLocationTokenFromCompany(companyId, locationId);
+        console.log(`✅ Location token pre-generado para ${locationId}`);
+      } catch (tokErr) {
+        console.warn(`⚠️ No se pudo pre-generar location token para ${locationId}: ${tokErr.message}`);
+      }
+    }
 
     await saveGHLChannelAccount(locationId, formattedPhone, providerData);
 
