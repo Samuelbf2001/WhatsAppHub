@@ -244,7 +244,11 @@ export const handleGHLWebhook = async (req, res) => {
   res.sendStatus(200);
 
   try {
-    const { locationId, contactId, phone, message, type } = req.body;
+    const body = req.body;
+
+    // GHL puede enviar distintos tipos de eventos — normalizar campos
+    const type       = body.type;
+    const locationId = body.locationId;
 
     // Eventos del sistema GHL (INSTALL, UNINSTALL, etc.) — ignorar silenciosamente
     const SYSTEM_EVENTS = ['INSTALL', 'UNINSTALL', 'UPGRADE', 'DOWNGRADE'];
@@ -253,10 +257,20 @@ export const handleGHLWebhook = async (req, res) => {
       return;
     }
 
+    // Solo procesar mensajes salientes (OutboundMessage)
+    if (type !== 'OutboundMessage') {
+      console.log(`ℹ️ GHL evento [${type}] ignorado (no es OutboundMessage)`);
+      return;
+    }
+
+    // GHL envía: to = número destino, body = texto del mensaje
+    const phone   = body.to;
+    const message = body.body;
+
     console.log(`📤 GHL Webhook saliente [location: ${locationId}] → ${phone}: "${message?.slice(0, 60)}"`);
 
     if (!locationId || !phone || !message) {
-      console.warn('⚠️ GHL webhook: faltan campos requeridos', JSON.stringify(req.body));
+      console.warn('⚠️ GHL webhook: faltan campos requeridos', JSON.stringify(body));
       return;
     }
 
