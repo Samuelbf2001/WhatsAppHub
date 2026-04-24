@@ -5,6 +5,7 @@ import { findOrCreateGHLContact, publishInboundMessageToGHL, refreshGHLToken } f
 import { saveGHLTokens, getGHLTokens, updateGHLAccessToken } from '../../db/ghlTokenRepository.js';
 import { saveGHLChannelAccount, getGHLChannelAccount } from '../../db/ghlChannelRepository.js';
 import { insertLog } from '../../db/logRepository.js';
+import pool from '../../config/database.js';
 
 dotenv.config();
 
@@ -260,6 +261,28 @@ export const listCompanyLocations = async (req, res) => {
   } catch (error) {
     console.error('❌ Error verificando company token GHL:', error.message);
     res.status(500).json({ error: 'Error verificando company', details: error.message });
+  }
+};
+
+// POST /api/ghl-location/generate-token — genera location token desde company token
+// Útil para canales creados antes de que se guardara company_id
+export const generateLocationToken = async (req, res) => {
+  const { locationId, companyId } = req.body;
+  if (!locationId || !companyId) {
+    return res.status(400).json({ error: 'locationId y companyId son requeridos' });
+  }
+  try {
+    const token = await getLocationTokenFromCompany(companyId, locationId);
+    // También actualizar company_id en el canal si existe
+    await pool.query(
+      `UPDATE ghl_channel_accounts SET company_id = $1 WHERE location_id = $2`,
+      [companyId, locationId]
+    );
+    console.log(`✅ Token generado manualmente para location ${locationId}`);
+    res.json({ success: true, locationId, companyId });
+  } catch (error) {
+    console.error('❌ Error generando location token:', error.message);
+    res.status(500).json({ error: 'Error generando token', details: error.message });
   }
 };
 

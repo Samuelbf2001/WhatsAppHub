@@ -6,6 +6,7 @@ import {
   listGHLChannels,
   handleGHLWebhook,
   listCompanyLocations,
+  generateLocationToken,
 } from '../controllers/ghl.controller.js';
 
 const router = Router();
@@ -18,8 +19,9 @@ router.get('/ghl/oauth-callback',  oauthCallback);
 router.post('/ghl/webhook',        handleGHLWebhook);
 
 // API de canales GHL
-router.post('/api/ghl-channels/setup',      setupGHLChannel);
-router.get('/api/ghl-channels',             listGHLChannels);
-router.get('/api/ghl-company/locations',    listCompanyLocations);
+router.post('/api/ghl-channels/setup',           setupGHLChannel);
+router.get('/api/ghl-channels',                  listGHLChannels);
+router.get('/api/ghl-company/locations',         listCompanyLocations);
+router.post('/api/ghl-location/generate-token',  generateLocationToken);
 
 export default router;
