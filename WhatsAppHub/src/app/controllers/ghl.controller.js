@@ -244,9 +244,7 @@ export const setupGHLChannel = async (req, res) => {
   }
 };
 
-// GET /api/ghl-company/locations?companyId= — verifica que el company token existe
-// GHL v2 no tiene endpoint público para listar locations de una company;
-// el usuario debe ingresar el locationId manualmente.
+// GET /api/ghl-company/locations?companyId= — lista subcuentas reales usando el company token
 export const listCompanyLocations = async (req, res) => {
   const { companyId } = req.query;
   if (!companyId) return res.status(400).json({ error: 'companyId es requerido' });
@@ -256,11 +254,36 @@ export const listCompanyLocations = async (req, res) => {
     const companyTokens = await getGHLTokens(companyKey);
     if (!companyTokens) return res.status(404).json({ error: 'No hay token de company para este companyId' });
 
-    // Devolver lista vacía para que el frontend muestre el campo manual de locationId
-    res.json({ success: true, companyId, locations: [] });
+    // Refrescar token si está por expirar
+    let accessToken = companyTokens.access_token;
+    const expiresAt = new Date(companyTokens.expires_at).getTime();
+    if (expiresAt - Date.now() < 5 * 60 * 1000) {
+      const refreshed = await refreshGHLToken(companyTokens.refresh_token);
+      await updateGHLAccessToken(companyKey, refreshed.accessToken, refreshed.expiresIn);
+      accessToken = refreshed.accessToken;
+    }
+
+    // Llamar GHL /locations/search con el company token
+    const ghlRes = await axios.get('https://services.leadconnectorhq.com/locations/search', {
+      params: { companyId, limit: 100, skip: 0 },
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Version: '2021-07-28',
+      },
+    });
+
+    const locations = (ghlRes.data.locations || []).map(loc => ({
+      id:   loc.id,
+      name: loc.name,
+      address: loc.address || '',
+      phone: loc.phone || '',
+    }));
+
+    console.log(`✅ ${locations.length} locations obtenidas para company ${companyId}`);
+    res.json({ success: true, companyId, locations });
   } catch (error) {
-    console.error('❌ Error verificando company token GHL:', error.message);
-    res.status(500).json({ error: 'Error verificando company', details: error.message });
+    console.error('❌ Error listando locations GHL:', error.response?.data || error.message);
+    res.status(500).json({ error: 'Error listando locations', details: error.response?.data?.message || error.message });
   }
 };
 
