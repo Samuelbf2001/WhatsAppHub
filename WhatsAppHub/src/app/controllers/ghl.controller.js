@@ -281,8 +281,13 @@ export const generateLocationToken = async (req, res) => {
     console.log(`✅ Token generado manualmente para location ${locationId}`);
     res.json({ success: true, locationId, companyId });
   } catch (error) {
-    console.error('❌ Error generando location token:', error.message);
-    res.status(500).json({ error: 'Error generando token', details: error.message });
+    console.error('❌ Error generando location token:', error.message, error.response?.data);
+    res.status(500).json({
+      error: 'Error generando token',
+      details: error.message,
+      ghl_response: error.response?.data || null,
+      ghl_status: error.response?.status || null,
+    });
   }
 };
 
