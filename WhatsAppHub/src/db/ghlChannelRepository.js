@@ -66,3 +66,11 @@ export async function deleteGHLChannelAccount(locationId, phoneNumber) {
     [locationId, phoneNumber]
   );
 }
+
+export async function deleteGHLChannelAccountById(id) {
+  const { rows } = await pool.query(
+    'DELETE FROM ghl_channel_accounts WHERE id = $1 RETURNING id',
+    [id]
+  );
+  return rows[0] || null;
+}

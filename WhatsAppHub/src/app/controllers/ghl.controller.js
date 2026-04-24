@@ -298,6 +298,56 @@ export const listGHLChannels = async (req, res) => {
   }
 };
 
+// GET /api/ghl-channels/qr/:instanceName — proxy QR sin auth JWT
+export const getGHLChannelQR = async (req, res) => {
+  const { instanceName } = req.params;
+  try {
+    const evoBase   = process.env.EVOLUTION_API_URL;
+    const evoApiKey = process.env.EVOLUTION_API_KEY;
+    const r = await fetch(`${evoBase}/instance/connect/${encodeURIComponent(instanceName)}`, {
+      headers: { apikey: evoApiKey },
+    });
+    if (!r.ok) return res.status(r.status).json({ error: 'EvolutionAPI error', status: r.status });
+    const data = await r.json();
+    // Evolution devuelve { base64: '...', code: '...' }
+    res.json({ base64: data.base64 || null, code: data.code || null });
+  } catch (error) {
+    res.status(500).json({ error: 'Error obteniendo QR GHL', details: error.message });
+  }
+};
+
+// GET /api/ghl-channels/state/:instanceName — estado conexión sin auth JWT
+export const getGHLChannelState = async (req, res) => {
+  const { instanceName } = req.params;
+  try {
+    const evoBase   = process.env.EVOLUTION_API_URL;
+    const evoApiKey = process.env.EVOLUTION_API_KEY;
+    const r = await fetch(`${evoBase}/instance/connectionState/${encodeURIComponent(instanceName)}`, {
+      headers: { apikey: evoApiKey },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!r.ok) return res.json({ state: 'unknown', connected: false });
+    const data = await r.json();
+    const state = data.instance?.state ?? 'unknown';
+    res.json({ instanceName, state, connected: state === 'open' });
+  } catch (error) {
+    res.json({ state: 'unknown', connected: false });
+  }
+};
+
+// DELETE /api/ghl-channels/:id — eliminar canal GHL por ID
+export const deleteGHLChannel = async (req, res) => {
+  const { id } = req.params;
+  try {
+    const { deleteGHLChannelAccountById } = await import('../../db/ghlChannelRepository.js');
+    const deleted = await deleteGHLChannelAccountById(id);
+    if (!deleted) return res.status(404).json({ error: 'Canal no encontrado' });
+    res.json({ success: true, id });
+  } catch (error) {
+    res.status(500).json({ error: 'Error eliminando canal GHL', details: error.message });
+  }
+};
+
 // POST /ghl/webhook — GHL envía aquí cuando el agente responde (Delivery URL)
 export const handleGHLWebhook = async (req, res) => {
   // Responder 200 inmediatamente

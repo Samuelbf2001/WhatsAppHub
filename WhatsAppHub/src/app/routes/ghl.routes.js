@@ -7,6 +7,9 @@ import {
   handleGHLWebhook,
   listCompanyLocations,
   generateLocationToken,
+  getGHLChannelQR,
+  getGHLChannelState,
+  deleteGHLChannel,
 } from '../controllers/ghl.controller.js';
 
 const router = Router();
@@ -17,6 +20,11 @@ router.get('/ghl/oauth-callback',  oauthCallback);
 
 // Delivery URL — GHL envía mensajes salientes del agente aquí
 router.post('/ghl/webhook',        handleGHLWebhook);
+
+// Proxy GHL (sin auth JWT — usados por GHLSetupPage standalone)
+router.get('/api/ghl-channels/qr/:instanceName',    getGHLChannelQR);
+router.get('/api/ghl-channels/state/:instanceName', getGHLChannelState);
+router.delete('/api/ghl-channels/:id',              deleteGHLChannel);
 
 // API de canales GHL
 router.post('/api/ghl-channels/setup',           setupGHLChannel);
