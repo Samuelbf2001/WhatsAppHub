@@ -85,6 +85,8 @@ export const installGHL = (req, res) => {
       'contacts.readonly',
       'contacts.write',
       'locations.readonly',
+      'oauth.write',
+      'oauth.readonly',
     ].join(' '),
   });
 
@@ -108,7 +110,12 @@ export const oauthCallback = async (req, res) => {
       { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
     );
 
-    const { access_token, refresh_token, expires_in, locationId, companyId, userType, isBulkInstallation } = tokenRes.data;
+    let { access_token, refresh_token, expires_in, locationId, companyId, userType, isBulkInstallation } = tokenRes.data;
+
+    // Sanitizar locationId por si GHL incluye sufijos como "/launchpad"
+    if (locationId) locationId = locationId.split('/')[0].trim();
+
+    console.log(`📋 GHL OAuth token response: locationId=${locationId} companyId=${companyId} userType=${userType} isBulkInstallation=${isBulkInstallation}`);
 
     if (locationId) {
       // Instalación a nivel Location — guardar directamente
@@ -135,11 +142,14 @@ export const oauthCallback = async (req, res) => {
 
 // POST /api/ghl-channels/setup — asociar número WhatsApp a un location GHL
 export const setupGHLChannel = async (req, res) => {
-  const { locationId, phoneNumber, evolutionInstance, companyId } = req.body;
+  let { locationId, phoneNumber, evolutionInstance, companyId } = req.body;
 
   if (!locationId || !phoneNumber) {
     return res.status(400).json({ error: 'locationId y phoneNumber son requeridos' });
   }
+
+  // Sanitizar locationId — GHL a veces devuelve "LOCATION_ID/launchpad" u otros sufijos
+  locationId = locationId.split('/')[0].trim();
 
   try {
     const formattedPhone = phoneNumber.replace(/\D/g, '');
@@ -294,22 +304,26 @@ export const generateLocationToken = async (req, res) => {
   if (!locationId || !companyId) {
     return res.status(400).json({ error: 'locationId y companyId son requeridos' });
   }
+  // Siempre actualizar company_id en DB, independiente de si el token se genera
+  await pool.query(
+    `UPDATE ghl_channel_accounts SET company_id = $1 WHERE location_id = $2`,
+    [companyId, locationId]
+  );
+
   try {
-    const token = await getLocationTokenFromCompany(companyId, locationId);
-    // También actualizar company_id en el canal si existe
-    await pool.query(
-      `UPDATE ghl_channel_accounts SET company_id = $1 WHERE location_id = $2`,
-      [companyId, locationId]
-    );
+    await getLocationTokenFromCompany(companyId, locationId);
     console.log(`✅ Token generado manualmente para location ${locationId}`);
-    res.json({ success: true, locationId, companyId });
+    res.json({ success: true, locationId, companyId, tokenGenerated: true });
   } catch (error) {
-    console.error('❌ Error generando location token:', error.message, error.response?.data);
-    res.status(500).json({
-      error: 'Error generando token',
-      details: error.message,
-      ghl_response: error.response?.data || null,
-      ghl_status: error.response?.status || null,
+    // company_id ya actualizado — el token se intentará auto-generar al llegar mensajes
+    console.warn(`⚠️ company_id actualizado pero token GHL no generado para ${locationId}:`, error.response?.data || error.message);
+    res.json({
+      success: true,
+      locationId,
+      companyId,
+      tokenGenerated: false,
+      warning: 'company_id guardado. Re-instala la app para obtener scopes oauth.write y generar el token completo.',
+      ghl_error: error.response?.data || error.message,
     });
   }
 };
