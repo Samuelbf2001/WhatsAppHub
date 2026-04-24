@@ -286,6 +286,28 @@ export const generateLocationToken = async (req, res) => {
   }
 };
 
+// GET /api/ghl-debug — diagnóstico temporal de tokens y canales GHL
+export const debugGHL = async (req, res) => {
+  try {
+    const tokens = await pool.query(
+      `SELECT location_id,
+              LEFT(access_token, 20) AS token_preview,
+              expires_at,
+              updated_at,
+              location_id LIKE 'company_%' AS is_company
+       FROM ghl_oauth_tokens ORDER BY updated_at DESC`
+    );
+    const channels = await pool.query(
+      `SELECT id, location_id, whatsapp_phone_number, provider,
+              evolution_instance, company_id, authorized, created_at
+       FROM ghl_channel_accounts ORDER BY created_at DESC`
+    );
+    res.json({ ghl_oauth_tokens: tokens.rows, ghl_channel_accounts: channels.rows });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
 // GET /api/ghl-channels?locationId=
 export const listGHLChannels = async (req, res) => {
   const { locationId } = req.query;
