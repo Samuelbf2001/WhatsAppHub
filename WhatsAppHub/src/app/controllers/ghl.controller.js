@@ -85,12 +85,11 @@ export const installGHL = (req, res) => {
       'contacts.readonly',
       'contacts.write',
       'locations.readonly',
-      'oauth.write',
-      'oauth.readonly',
     ].join(' '),
   });
 
-  res.redirect(`https://marketplace.gohighlevel.com/oauth/chooselocation?${params}`);
+  // GHL migró su dominio de marketplace.gohighlevel.com → marketplace.leadconnectorhq.com
+  res.redirect(`https://marketplace.leadconnectorhq.com/oauth/chooselocation?${params}`);
 };
 
 // GET /ghl/oauth-callback — GHL redirige aquí con ?code=
