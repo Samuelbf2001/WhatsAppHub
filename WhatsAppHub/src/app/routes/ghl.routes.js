@@ -12,6 +12,7 @@ import {
   getGHLChannelState,
   deleteGHLChannel,
   debugGHL,
+  testGHLInbound,
 } from '../controllers/ghl.controller.js';
 
 const router = Router();
@@ -35,5 +36,6 @@ router.get('/api/ghl-channels',                       listGHLChannels);
 router.get('/api/ghl-company/locations',              listCompanyLocations);
 router.post('/api/ghl-location/generate-token',       generateLocationToken);
 router.get('/api/ghl-debug',                          debugGHL);
+router.get('/api/ghl-test-inbound',                   testGHLInbound);
 
 export default router;

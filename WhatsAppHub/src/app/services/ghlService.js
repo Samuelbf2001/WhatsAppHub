@@ -29,18 +29,26 @@ export async function findOrCreateGHLContact(accessToken, locationId, phone) {
       return contact.id;
     }
   } catch (err) {
-    // 404 o sin resultados — crear nuevo
+    if (err.response?.status !== 404) {
+      console.warn(`⚠️ GHL contact search error ${err.response?.status}:`, JSON.stringify(err.response?.data));
+    }
   }
 
   // Crear contacto nuevo
-  const createRes = await axios.post(`${GHL_BASE_URL}/contacts/`, {
-    locationId,
-    phone: `+${normalized}`,
-    name: `+${normalized}`,
-    source: 'WhatsApp Gateway',
-  }, { headers });
+  let createRes;
+  try {
+    createRes = await axios.post(`${GHL_BASE_URL}/contacts`, {
+      locationId,
+      phone: `+${normalized}`,
+      name: `+${normalized}`,
+    }, { headers });
+  } catch (err) {
+    console.error(`❌ GHL create contact 400 body:`, JSON.stringify(err.response?.data));
+    throw err;
+  }
 
-  const newContactId = createRes.data?.contact?.id;
+  // GHL v2 puede devolver { contact: { id } } o { id } directamente
+  const newContactId = createRes.data?.contact?.id || createRes.data?.id;
   console.log(`✅ Contacto GHL creado: ${newContactId} para +${normalized}`);
   return newContactId;
 }

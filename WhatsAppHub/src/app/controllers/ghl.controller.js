@@ -621,6 +621,154 @@ export const deleteGHLChannel = async (req, res) => {
   }
 };
 
+// GET /api/ghl-test-inbound?locationId=X&phone=Y — diagnóstico completo del flujo entrante
+export const testGHLInbound = async (req, res) => {
+  const locationId = req.query.locationId;
+  const phone      = req.query.phone || '+573009781174';
+
+  if (!locationId) return res.status(400).json({ error: 'locationId requerido' });
+
+  const steps = [];
+  const log = (step, ok, data) => { steps.push({ step, ok, data }); };
+
+  // ── 1. DB: tokens para este location ──────────────────────────
+  try {
+    const { rows } = await pool.query(
+      `SELECT location_id, expires_at, updated_at,
+              LEFT(access_token,30) AS token_prefix,
+              location_id LIKE 'company_%' AS is_company
+       FROM ghl_oauth_tokens WHERE location_id = $1`,
+      [locationId]
+    );
+
+    // También buscar token de company si hay canal con company_id
+    const { rows: channelRows } = await pool.query(
+      'SELECT * FROM ghl_channel_accounts WHERE location_id = $1 AND authorized = TRUE LIMIT 1',
+      [locationId]
+    );
+
+    const tokenRow = rows[0];
+    const companyId = channelRows[0]?.company_id || null;
+
+    if (!tokenRow && !companyId) {
+      log('DB:tokens', false, { error: 'No hay token para este locationId', locationId, available: [] });
+      const { rows: allTokens } = await pool.query(
+        'SELECT location_id, LEFT(access_token,20) AS prefix, expires_at FROM ghl_oauth_tokens ORDER BY updated_at DESC LIMIT 5'
+      );
+      steps[steps.length-1].data.available = allTokens;
+      return res.json({ locationId, phone, steps, success: false });
+    }
+
+    log('DB:tokens', true, {
+      found: !!tokenRow,
+      location_id: tokenRow?.location_id,
+      is_company: tokenRow?.is_company,
+      expires_at: tokenRow?.expires_at,
+      token_prefix: tokenRow?.token_prefix,
+      channel_company_id: companyId,
+    });
+  } catch (e) {
+    log('DB:tokens', false, { error: e.message });
+    return res.status(500).json({ steps, success: false });
+  }
+
+  // ── 2. Obtener token válido ────────────────────────────────────
+  let accessToken;
+  try {
+    const { rows: channelRows } = await pool.query(
+      'SELECT company_id FROM ghl_channel_accounts WHERE location_id = $1 AND authorized = TRUE LIMIT 1',
+      [locationId]
+    );
+    const companyId = channelRows[0]?.company_id || null;
+    accessToken = await getValidGHLToken(locationId, companyId);
+    log('GHL:getToken', true, { token_prefix: accessToken.slice(0, 30) + '...' });
+  } catch (e) {
+    log('GHL:getToken', false, { error: e.message });
+    return res.json({ locationId, phone, steps, success: false });
+  }
+
+  // ── 3. Validar token contra GHL ───────────────────────────────
+  try {
+    const r = await axios.get(`https://services.leadconnectorhq.com/locations/${locationId}`, {
+      headers: { Authorization: `Bearer ${accessToken}`, Version: '2021-07-28' },
+    });
+    log('GHL:validateToken', true, { locationName: r.data?.name || r.data?.id });
+  } catch (e) {
+    log('GHL:validateToken', false, {
+      status: e.response?.status,
+      body: e.response?.data,
+      error: e.message,
+    });
+    return res.json({ locationId, phone, steps, success: false });
+  }
+
+  // ── 4. Buscar contacto ────────────────────────────────────────
+  const normalized = phone.replace(/\D/g, '');
+  let contactId = null;
+  const headers = {
+    Authorization: `Bearer ${accessToken}`,
+    Version: '2021-07-28',
+    'Content-Type': 'application/json',
+  };
+
+  try {
+    const r = await axios.get('https://services.leadconnectorhq.com/contacts/search/duplicate', {
+      headers,
+      params: { locationId, phone: `+${normalized}` },
+    });
+    contactId = r.data?.contact?.id || null;
+    log('GHL:searchContact', true, { contactId, found: !!contactId });
+  } catch (e) {
+    log('GHL:searchContact', false, {
+      status: e.response?.status,
+      body: e.response?.data,
+    });
+  }
+
+  // ── 5. Crear contacto si no existe ────────────────────────────
+  if (!contactId) {
+    try {
+      const payload = { locationId, phone: `+${normalized}`, name: `+${normalized}` };
+      const r = await axios.post('https://services.leadconnectorhq.com/contacts', payload, { headers });
+      contactId = r.data?.contact?.id || r.data?.id;
+      log('GHL:createContact', true, { contactId, response: r.data });
+    } catch (e) {
+      log('GHL:createContact', false, {
+        status: e.response?.status,
+        body: e.response?.data,
+        error: e.message,
+      });
+      return res.json({ locationId, phone, steps, success: false });
+    }
+  }
+
+  // ── 6. Publicar mensaje inbound ───────────────────────────────
+  const PROVIDER_ID = process.env.GHL_CONVERSATION_PROVIDER_ID || '69ea36f789175e5da0ebc461';
+  try {
+    const payload = {
+      type: 'Custom',
+      locationId,
+      contactId,
+      conversationProviderId: PROVIDER_ID,
+      message: 'Test inbound desde WhatsAppHub 🚀',
+      direction: 'inbound',
+      date: new Date().toISOString(),
+    };
+    const r = await axios.post('https://services.leadconnectorhq.com/conversations/messages/inbound', payload, { headers });
+    log('GHL:publishInbound', true, { conversationId: r.data?.conversationId, response: r.data });
+  } catch (e) {
+    log('GHL:publishInbound', false, {
+      status: e.response?.status,
+      body: e.response?.data,
+      error: e.message,
+      providerId: PROVIDER_ID,
+    });
+    return res.json({ locationId, phone, steps, success: false });
+  }
+
+  return res.json({ locationId, phone, steps, success: true });
+};
+
 // POST /ghl/webhook — GHL envía aquí cuando el agente responde (Delivery URL)
 export const handleGHLWebhook = async (req, res) => {
   // Responder 200 inmediatamente
