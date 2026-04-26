@@ -798,37 +798,42 @@ export const testGHLInbound = async (req, res) => {
 
   log('GHL:providerIdUsed', true, { PROVIDER_ID, appVersionId, candidates: candidateIds });
 
-  // ── 6. Publicar mensaje — probar combinaciones type x provider ──
-  const typeVariants = ['Custom', 'TYPE_CUSTOM'];
+  // ── 6. Publicar mensaje — probar TYPE_SMS (SMS provider replacement)
+  //    El provider usa TYPE_SMS porque reemplaza al proveedor SMS, no es Custom Channel
+  const normalized = phone.replace(/\D/g, '');
+  const typeVariants = [
+    { type: 'TYPE_SMS', withProvider: true  },
+    { type: 'TYPE_SMS', withProvider: false },
+    { type: 'Custom',   withProvider: true  },
+  ];
   let publishOk = false;
-  outer: for (const pid of candidateIds) {
-    for (const msgType of typeVariants) {
-      try {
-        const payload = {
-          type: msgType,
-          locationId,
-          contactId,
-          conversationProviderId: pid,
-          message: `Test WhatsAppHub [type=${msgType} pid=${pid.slice(-6)}]`,
-          direction: 'inbound',
-          date: new Date().toISOString(),
-        };
-        const r = await axios.post('https://services.leadconnectorhq.com/conversations/messages/inbound', payload, { headers });
-        log('GHL:publishInbound', true, { conversationId: r.data?.conversationId, type: msgType, providerId: pid });
-        publishOk = true;
-        PROVIDER_ID = pid;
-        break outer;
-      } catch (e) {
-        log(`GHL:publishInbound[${msgType}|${pid.slice(-8)}]`, false, {
-          status: e.response?.status,
-          body: e.response?.data,
-        });
-      }
+  for (const { type: msgType, withProvider } of typeVariants) {
+    try {
+      const payload = {
+        type: msgType,
+        locationId,
+        contactId,
+        message: `Test WhatsAppHub [${msgType}${withProvider ? '+pid' : ''}]`,
+        direction: 'inbound',
+        phone: `+${normalized}`,
+        date: new Date().toISOString(),
+      };
+      if (withProvider) payload.conversationProviderId = PROVIDER_ID;
+
+      const r = await axios.post('https://services.leadconnectorhq.com/conversations/messages/inbound', payload, { headers });
+      log('GHL:publishInbound', true, { conversationId: r.data?.conversationId, type: msgType, withProvider, providerId: withProvider ? PROVIDER_ID : null });
+      publishOk = true;
+      break;
+    } catch (e) {
+      log(`GHL:publish[${msgType}|pid=${withProvider}]`, false, {
+        status: e.response?.status,
+        body: e.response?.data,
+      });
     }
   }
   if (!publishOk) {
     return res.json({ locationId, phone, steps, success: false,
-      hint: 'Ambos type+provider fallaron. Busca el conversationProviderId correcto en marketplace.gohighlevel.com → tu app → Custom Conversation Provider' });
+      hint: 'Todas las combinaciones type+provider fallaron.' });
   }
 
   return res.json({ locationId, phone, steps, success: true });

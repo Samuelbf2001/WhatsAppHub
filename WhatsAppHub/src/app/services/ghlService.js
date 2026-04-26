@@ -69,13 +69,16 @@ export async function publishInboundMessageToGHL(accessToken, locationId, contac
     'Content-Type': 'application/json',
   };
 
+  // GHL SMS Provider replacement: type='TYPE_SMS', sin conversationProviderId
+  // (el provider se identifica por el token OAuth de la app instalada)
   const payload = {
-    type: 'Custom',
+    type: 'TYPE_SMS',
     locationId,
     contactId,
     conversationProviderId: GHL_PROVIDER_ID,
     message: messageData.text || '',
     direction: 'inbound',
+    phone: messageData.phoneNumber || messageData.phone || '',
     date: new Date(messageData.timestamp || Date.now()).toISOString(),
   };
 
@@ -84,7 +87,7 @@ export async function publishInboundMessageToGHL(accessToken, locationId, contac
     payload.attachments = [messageData.mediaUrl];
   }
 
-  console.log(`📤 Enviando a GHL:`, JSON.stringify(payload));
+  console.log(`📤 Enviando a GHL (SMS provider):`, JSON.stringify(payload));
   try {
     const res = await axios.post(`${GHL_BASE_URL}/conversations/messages/inbound`, payload, { headers });
     console.log(`📥 Mensaje publicado en GHL Inbox: conversationId=${res.data?.conversationId}`, JSON.stringify(res.data));
