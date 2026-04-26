@@ -3,6 +3,10 @@ import axios from 'axios';
 const GHL_BASE_URL = 'https://services.leadconnectorhq.com';
 const GHL_PROVIDER_ID = process.env.GHL_CONVERSATION_PROVIDER_ID || '69ea36f789175e5da0ebc461';
 
+// Caché en memoria: `${locationId}:${normalized}` → { contactId: string, expiresAt: number }
+const _contactCache = new Map();
+const CONTACT_CACHE_TTL = 10 * 60 * 1000;
+
 /**
  * Busca un contacto por teléfono en GHL. Si no existe, lo crea.
  * @param {string} accessToken
@@ -21,6 +25,13 @@ export async function findOrCreateGHLContact(accessToken, locationId, phone, nam
   // Normalizar a E.164 sin el +
   const normalized = phone.replace(/\D/g, '');
   const defaultName = `+${normalized}`;
+  const cacheKey = `${locationId}:${normalized}`;
+
+  const cached = _contactCache.get(cacheKey);
+  if (cached && Date.now() < cached.expiresAt) {
+    console.log(`👤 Contacto GHL (caché): ${cached.contactId} para +${normalized}`);
+    return cached.contactId;
+  }
 
   // Buscar contacto existente por teléfono
   try {
@@ -31,12 +42,12 @@ export async function findOrCreateGHLContact(accessToken, locationId, phone, nam
     const contact = searchRes.data?.contact;
     if (contact?.id) {
       console.log(`👤 Contacto GHL encontrado: ${contact.id} para +${normalized}`);
+      _contactCache.set(cacheKey, { contactId: contact.id, expiresAt: Date.now() + CONTACT_CACHE_TTL });
       // Si tenemos un nombre mejor y el contacto tiene el nombre genérico (= número), actualizarlo
       if (name && contact.name === defaultName) {
-        try {
-          await axios.put(`${GHL_BASE_URL}/contacts/${contact.id}`, { name }, { headers });
-          console.log(`✏️ Nombre GHL actualizado: ${contact.id} → "${name}"`);
-        } catch { /* ignorar errores de actualización de nombre */ }
+        axios.put(`${GHL_BASE_URL}/contacts/${contact.id}`, { name }, { headers })
+          .then(() => console.log(`✏️ Nombre GHL actualizado: ${contact.id} → "${name}"`))
+          .catch(() => {});
       }
       return contact.id;
     }
@@ -56,12 +67,14 @@ export async function findOrCreateGHLContact(accessToken, locationId, phone, nam
     // GHL v2 puede devolver { contact: { id } } o { id } directamente
     const newContactId = createRes.data?.contact?.id || createRes.data?.id;
     console.log(`✅ Contacto GHL creado: ${newContactId} para +${normalized} (nombre: "${name || defaultName}")`);
+    _contactCache.set(cacheKey, { contactId: newContactId, expiresAt: Date.now() + CONTACT_CACHE_TTL });
     return newContactId;
   } catch (err) {
     // Si el location tiene "no duplicados" activado, GHL retorna 400 con el contactId existente en meta
     const existingId = err.response?.data?.meta?.contactId;
     if (existingId) {
       console.log(`👤 Contacto GHL ya existe (anti-dup): ${existingId} para +${normalized}`);
+      _contactCache.set(cacheKey, { contactId: existingId, expiresAt: Date.now() + CONTACT_CACHE_TTL });
       return existingId;
     }
     console.error(`❌ GHL create contact error ${err.response?.status}:`, JSON.stringify(err.response?.data));

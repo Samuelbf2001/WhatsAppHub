@@ -131,7 +131,7 @@ async function flushToGHL(messages, channelAccount, locationId) {
     phoneNumber: merged.phoneNumber,
   });
 
-  await insertLog(locationId, {
+  insertLog(locationId, {
     channelAccountId: channelAccount.id,
     direction:        'incoming',
     customerPhone:    merged.phoneNumber,
@@ -140,7 +140,7 @@ async function flushToGHL(messages, channelAccount, locationId) {
     status:           'success',
     eventType:        messages.length > 1 ? 'MESSAGE_BATCH_RECEIVED' : 'MESSAGE_RECEIVED',
     provider:         channelAccount.provider || 'evolution',
-  });
+  }).catch(err => console.error('[Log GHL]', err.message));
 
   console.log(`✅ Publicado en GHL Inbox: location ${locationId} (${messages.length} msgs agrupados)`);
 }
