@@ -749,29 +749,45 @@ export const testGHLInbound = async (req, res) => {
     }
   }
 
-  // ── 5b. Descubrir conversationProviderId correcto ─────────────
+  // ── 5b. Descubrir conversationProviderId ─────────────────────
   let PROVIDER_ID = process.env.GHL_CONVERSATION_PROVIDER_ID || '69ea36f789175e5da0ebc461';
-  const providerEndpoints = [
-    `/conversations/providers/customProviders`,
-    `/conversations/customProviders`,
-    `/locations/${locationId}/customProviders`,
-  ];
-  for (const ep of providerEndpoints) {
+
+  // Intento 1: company token → GET /conversations/providers/customProviders
+  const { rows: chRows } = await pool.query(
+    'SELECT company_id FROM ghl_channel_accounts WHERE location_id=$1 AND authorized=TRUE LIMIT 1', [locationId]
+  );
+  const companyId = chRows[0]?.company_id;
+  if (companyId) {
     try {
-      const r = await axios.get(`https://services.leadconnectorhq.com${ep}`, {
-        headers,
-        params: ep.startsWith('/locations') ? undefined : { locationId },
+      const companyToken = await getValidGHLToken(`company_${companyId}`, null);
+      const r = await axios.get('https://services.leadconnectorhq.com/conversations/providers/customProviders', {
+        headers: { Authorization: `Bearer ${companyToken}`, Version: '2021-07-28' },
+        params: { locationId },
       });
-      const raw = r.data;
-      const providers = raw?.providers || raw?.customProviders || (Array.isArray(raw) ? raw : []);
-      log(`GHL:providers[${ep}]`, true, { raw: JSON.stringify(raw).slice(0,400) });
-      const found = providers.find(p => p.type === 'Custom' || p.type === 'custom' || p.id || p._id);
-      if (found) { PROVIDER_ID = found.id || found._id; break; }
+      const providers = r.data?.providers || r.data?.customProviders || (Array.isArray(r.data) ? r.data : []);
+      log('GHL:providers[companyToken]', true, { count: providers.length, raw: JSON.stringify(r.data).slice(0,500) });
+      const found = providers.find(p => p.type === 'Custom' || p.id || p._id);
+      if (found) PROVIDER_ID = found.id || found._id;
     } catch (e) {
-      log(`GHL:providers[${ep}]`, false, { status: e.response?.status, msg: e.response?.data?.error || e.message });
+      log('GHL:providers[companyToken]', false, { status: e.response?.status, body: JSON.stringify(e.response?.data).slice(0,300) });
     }
   }
-  log('GHL:providerIdUsed', true, { PROVIDER_ID });
+
+  // Intento 2: buscar en conversaciones existentes del contacto
+  try {
+    const r = await axios.get('https://services.leadconnectorhq.com/conversations/search', {
+      headers,
+      params: { locationId, contactId },
+    });
+    const conversations = r.data?.conversations || [];
+    log('GHL:conversations[search]', true, { count: conversations.length, sample: JSON.stringify(conversations[0]).slice(0,400) });
+    const withProvider = conversations.find(c => c.conversationProviderId);
+    if (withProvider) PROVIDER_ID = withProvider.conversationProviderId;
+  } catch (e) {
+    log('GHL:conversations[search]', false, { status: e.response?.status, body: JSON.stringify(e.response?.data).slice(0,200) });
+  }
+
+  log('GHL:providerIdUsed', true, { PROVIDER_ID, env: process.env.GHL_CONVERSATION_PROVIDER_ID });
 
   // ── 6. Publicar mensaje inbound ───────────────────────────────
   try {
