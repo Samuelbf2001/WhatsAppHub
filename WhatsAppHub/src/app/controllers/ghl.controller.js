@@ -79,6 +79,10 @@ export async function getValidGHLToken(locationId, companyId = null) {
 
 // GET /ghl/install — inicia el flujo OAuth con GHL
 export const installGHL = (req, res) => {
+  // version_id = app ID base (GHL_CLIENT_ID sin el sufijo de tenant "-xxxxx")
+  // GHL_APP_VERSION_ID puede sobreescribirse explícitamente como env var
+  const versionId = process.env.GHL_APP_VERSION_ID || GHL_CLIENT_ID.split('-')[0];
+
   const params = new URLSearchParams({
     response_type: 'code',
     redirect_uri:  GHL_REDIRECT_URI,
@@ -92,10 +96,11 @@ export const installGHL = (req, res) => {
       'contacts.write',
       'locations.readonly',
     ].join(' '),
+    version_id: versionId,
   });
 
-  // GHL migró su dominio de marketplace.gohighlevel.com → marketplace.leadconnectorhq.com
-  res.redirect(`https://marketplace.leadconnectorhq.com/oauth/chooselocation?${params}`);
+  // GHL V2 Marketplace: requiere /v2/oauth/chooselocation + version_id
+  res.redirect(`https://marketplace.leadconnectorhq.com/v2/oauth/chooselocation?${params}`);
 };
 
 // GET /ghl/oauth-callback — GHL redirige aquí con ?code=
