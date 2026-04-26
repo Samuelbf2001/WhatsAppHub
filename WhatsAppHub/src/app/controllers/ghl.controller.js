@@ -787,29 +787,45 @@ export const testGHLInbound = async (req, res) => {
     log('GHL:conversations[search]', false, { status: e.response?.status, body: JSON.stringify(e.response?.data).slice(0,200) });
   }
 
-  log('GHL:providerIdUsed', true, { PROVIDER_ID, env: process.env.GHL_CONVERSATION_PROVIDER_ID });
+  // ── 5c. Probar IDs candidatos si el configurado falla ────────────
+  // GHL_CLIENT_ID = "69ea11021b0603897d37ac58-mobieua1"  → app version = "69ea11021b0603897d37ac58"
+  const clientId = process.env.GHL_CLIENT_ID || '';
+  const appVersionId = clientId.split('-')[0]; // parte antes del primer guion
+  const candidateIds = [
+    PROVIDER_ID,
+    ...(appVersionId && appVersionId !== PROVIDER_ID ? [appVersionId] : []),
+  ];
 
-  // ── 6. Publicar mensaje inbound ───────────────────────────────
-  try {
-    const payload = {
-      type: 'Custom',
-      locationId,
-      contactId,
-      conversationProviderId: PROVIDER_ID,
-      message: 'Test inbound desde WhatsAppHub 🚀',
-      direction: 'inbound',
-      date: new Date().toISOString(),
-    };
-    const r = await axios.post('https://services.leadconnectorhq.com/conversations/messages/inbound', payload, { headers });
-    log('GHL:publishInbound', true, { conversationId: r.data?.conversationId, response: r.data });
-  } catch (e) {
-    log('GHL:publishInbound', false, {
-      status: e.response?.status,
-      body: e.response?.data,
-      error: e.message,
-      providerId: PROVIDER_ID,
-    });
-    return res.json({ locationId, phone, steps, success: false });
+  log('GHL:providerIdUsed', true, { PROVIDER_ID, appVersionId, candidates: candidateIds });
+
+  // ── 6. Publicar mensaje inbound — probar cada candidato ───────
+  let publishOk = false;
+  for (const pid of candidateIds) {
+    try {
+      const payload = {
+        type: 'Custom',
+        locationId,
+        contactId,
+        conversationProviderId: pid,
+        message: `Test inbound WhatsAppHub 🚀 [provider=${pid}]`,
+        direction: 'inbound',
+        date: new Date().toISOString(),
+      };
+      const r = await axios.post('https://services.leadconnectorhq.com/conversations/messages/inbound', payload, { headers });
+      log('GHL:publishInbound', true, { conversationId: r.data?.conversationId, providerId: pid, response: r.data });
+      publishOk = true;
+      PROVIDER_ID = pid; // guardar el que funcionó
+      break;
+    } catch (e) {
+      log(`GHL:publishInbound[${pid}]`, false, {
+        status: e.response?.status,
+        body: e.response?.data,
+        error: e.message,
+      });
+    }
+  }
+  if (!publishOk) {
+    return res.json({ locationId, phone, steps, success: false, hint: 'Revisa GHL_CONVERSATION_PROVIDER_ID en el developer portal de GHL' });
   }
 
   return res.json({ locationId, phone, steps, success: true });
