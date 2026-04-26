@@ -178,26 +178,44 @@
     }
     /* Location picker */
     .location-list {
-      max-height: 220px;
+      max-height: 260px;
       overflow-y: auto;
       border: 1.5px solid var(--gray-100);
       border-radius: var(--radius-md);
       background: var(--gray-50);
     }
     .location-item {
-      padding: 11px 14px;
+      padding: 13px 16px;
       cursor: pointer;
       border-bottom: 1px solid var(--gray-100);
       transition: var(--transition);
+      border-left: 3px solid transparent;
     }
     .location-item:last-child { border-bottom: none; }
-    .location-item:hover { background: rgba(20,200,180,.06); }
+    .location-item:hover { background: rgba(20,200,180,.06); border-left-color: rgba(20,200,180,.3); }
     .location-item.selected {
       background: rgba(20,200,180,.1);
-      border-left: 3px solid var(--teal);
+      border-left-color: var(--teal);
     }
     .location-name { font-size: 0.875rem; font-weight: 600; color: var(--navy); }
-    .location-id   { font-size: 0.7rem; color: var(--gray-400); font-family: monospace; }
+    .location-id   { font-size: 0.7rem; color: var(--gray-400); font-family: monospace; margin-top: 2px; }
+    /* Location loading */
+    .locations-loading {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 20px 16px;
+      color: var(--gray-400);
+      font-size: 0.85rem;
+    }
+    .spinner-sm {
+      width: 16px; height: 16px;
+      border: 2px solid var(--gray-100);
+      border-top-color: var(--teal);
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+      flex-shrink: 0;
+    }
     /* Existing channels */
     .channels-list { margin-bottom: 20px; }
     .channel-item {
@@ -282,6 +300,37 @@
     .phone-row { display: flex; gap: 8px; }
     .phone-row select { width: 120px; flex-shrink: 0; }
     .phone-row input  { flex: 1; }
+    /* QR section */
+    #section-qr {
+      margin-top: 24px;
+      padding-top: 24px;
+      border-top: 1px solid var(--gray-100);
+    }
+    .qr-wrapper {
+      text-align: center;
+      padding: 16px 0 8px;
+    }
+    .qr-wrapper img {
+      width: 200px; height: 200px;
+      border-radius: 12px;
+      border: 2px solid var(--teal);
+      display: block;
+      margin: 0 auto 10px;
+    }
+    .qr-hint {
+      color: var(--gray-400);
+      font-size: 0.78rem;
+      line-height: 1.5;
+      margin-bottom: 6px;
+    }
+    #qr-polling-status {
+      font-size: 0.75rem;
+      color: var(--teal);
+      font-weight: 600;
+    }
+    #qr-polling-status.connected {
+      color: var(--success);
+    }
   </style>
 </head>
 <body>
@@ -314,18 +363,27 @@
       <div class="alert error"   id="alert-error"></div>
       <div class="alert success" id="alert-success"></div>
 
-      <!-- PASO 1: ingresar locationId manualmente (solo agency install) -->
+      <!-- PASO 1 (agency install): seleccionar location de lista -->
       <div id="section-locations" style="display:none">
-        <p class="section-title">1. ID de la subcuenta (Sub-Account)</p>
-        <div class="form-group">
-          <label>Location ID</label>
-          <input type="text" id="locationIdInput" placeholder="dMX4yw4WB0RZFivUhgyG" />
-          <span class="input-hint">Encuéntralo en GHL → Settings → Business Info → Location ID.</span>
+        <p class="section-title">1. Selecciona la subcuenta (Sub-Account)</p>
+
+        <!-- Estado: cargando -->
+        <div id="locations-loading" class="locations-loading">
+          <div class="spinner-sm"></div>
+          <span>Cargando subcuentas...</span>
         </div>
+
+        <!-- Estado: error al cargar -->
+        <div id="locations-error" style="display:none">
+          <div class="alert error show" id="locations-error-msg"></div>
+        </div>
+
+        <!-- Lista de locations -->
+        <div class="location-list" id="location-list" style="display:none"></div>
       </div>
 
       <!-- PASO 2: canales existentes + formulario -->
-      <div id="section-form">
+      <div id="section-form" style="display:none">
         <div id="existing-channels" style="display:none">
           <p class="section-title">Canales configurados</p>
           <div class="channels-list" id="channels-list"></div>
@@ -366,6 +424,18 @@
             <span id="btn-text">Conectar WhatsApp</span>
           </button>
         </form>
+
+        <!-- PASO 3: QR para escanear (se muestra si la respuesta trae qrBase64) -->
+        <div id="section-qr" style="display:none">
+          <p class="section-title">3. Escanea el QR con WhatsApp</p>
+          <div class="qr-wrapper">
+            <img id="qr-img" src="" alt="QR WhatsApp" />
+            <p class="qr-hint">
+              WhatsApp &rarr; Ajustes &rarr; Dispositivos vinculados &rarr; Vincular dispositivo
+            </p>
+            <p id="qr-polling-status">Verificando conexión...</p>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -377,9 +447,12 @@
   const companyId  = params.get('companyId')  || '';
 
   let selectedLocationId = locationId;
+  let qrPollingTimer     = null;
+
+  // ── Utilidades ─────────────────────────────────────────────────────────────
 
   function setStep(n) {
-    ['step1','step2','step3'].forEach((id, i) =>
+    ['step1', 'step2', 'step3'].forEach((id, i) =>
       document.getElementById(id).classList.toggle('active', i < n)
     );
   }
@@ -394,7 +467,8 @@
     document.querySelectorAll('.alert').forEach(el => el.classList.remove('show'));
   }
 
-  // Cargar canales existentes para un locationId
+  // ── Canales existentes ──────────────────────────────────────────────────────
+
   async function loadExistingChannels(locId) {
     try {
       const res  = await fetch('/api/ghl-channels?locationId=' + locId);
@@ -412,90 +486,216 @@
           </div>
         `).join('');
         box.style.display = 'block';
+      } else {
+        box.style.display = 'none';
       }
-    } catch {}
+    } catch (_) {}
   }
 
-  // ── AGENCY INSTALL: mostrar campo manual de locationId ──
+  // ── Mostrar formulario de WhatsApp para un locationId dado ──────────────────
+
+  function showFormForLocation(locId, formStepLabel) {
+    selectedLocationId = locId;
+    document.getElementById('form-title').textContent = formStepLabel + '. Conectar número de WhatsApp';
+    document.getElementById('section-form').style.display = 'block';
+    loadExistingChannels(locId);
+    setStep(2);
+  }
+
+  // ── QR Polling ──────────────────────────────────────────────────────────────
+
+  function startQrPolling(instanceName) {
+    const statusEl = document.getElementById('qr-polling-status');
+    statusEl.textContent = 'Verificando conexión...';
+    statusEl.className = '';
+
+    // Poll cada 5 segundos
+    qrPollingTimer = setInterval(async () => {
+      try {
+        const res  = await fetch('/api/ghl-channels/state/' + encodeURIComponent(instanceName));
+        const data = await res.json();
+        const state = (data.state || data.status || '').toLowerCase();
+
+        if (state === 'open' || state === 'connected') {
+          clearInterval(qrPollingTimer);
+          qrPollingTimer = null;
+          statusEl.textContent = 'Conectado exitosamente.';
+          statusEl.className = 'connected';
+          // Ocultar QR y actualizar canales
+          setTimeout(() => {
+            document.getElementById('section-qr').style.display = 'none';
+            loadExistingChannels(selectedLocationId);
+          }, 1800);
+        }
+      } catch (_) {}
+    }, 5000);
+  }
+
+  // ── FLUJO AGENCY INSTALL: cargar locations desde API ───────────────────────
+
   if (companyId && !locationId) {
+    setStep(1);
     document.getElementById('section-locations').style.display = 'block';
-    document.getElementById('form-title').textContent = '2. Conectar número de WhatsApp';
 
-    // Cuando el usuario escribe el locationId, actualizar selectedLocationId y cargar canales
-    document.getElementById('locationIdInput').addEventListener('input', function() {
-      const val = this.value.trim();
-      selectedLocationId = val || '';
-      if (val.length > 5) loadExistingChannels(val);
-    });
+    (async () => {
+      const loadingEl = document.getElementById('locations-loading');
+      const errorEl   = document.getElementById('locations-error');
+      const errorMsg  = document.getElementById('locations-error-msg');
+      const listEl    = document.getElementById('location-list');
+
+      try {
+        const res  = await fetch('/api/ghl-company/locations?companyId=' + encodeURIComponent(companyId));
+        const data = await res.json();
+
+        loadingEl.style.display = 'none';
+
+        if (!res.ok || !data.success) {
+          throw new Error(data.error || data.details || 'No se pudieron cargar las subcuentas.');
+        }
+
+        const locations = data.locations || [];
+
+        if (locations.length === 0) {
+          errorMsg.innerHTML = 'No se encontraron subcuentas para esta agencia.';
+          errorEl.style.display  = 'block';
+          return;
+        }
+
+        // Auto-seleccionar si solo hay 1
+        if (locations.length === 1) {
+          showFormForLocation(locations[0].id, '2');
+          return;
+        }
+
+        // Renderizar lista clickeable
+        listEl.innerHTML = locations.map(loc => `
+          <div class="location-item" data-id="${loc.id}" data-name="${escapeHtml(loc.name)}">
+            <div class="location-name">${escapeHtml(loc.name)}</div>
+            <div class="location-id">${loc.id}</div>
+          </div>
+        `).join('');
+        listEl.style.display = 'block';
+
+        // Click handler
+        listEl.addEventListener('click', (e) => {
+          const item = e.target.closest('.location-item');
+          if (!item) return;
+
+          // Marcar seleccionada
+          listEl.querySelectorAll('.location-item').forEach(el => el.classList.remove('selected'));
+          item.classList.add('selected');
+
+          showFormForLocation(item.dataset.id, '2');
+        });
+
+      } catch (err) {
+        loadingEl.style.display  = 'none';
+        errorMsg.innerHTML = 'Error al cargar subcuentas: ' + err.message;
+        errorEl.style.display    = 'block';
+      }
+    })();
   }
 
-  // ── LOCATION INSTALL: cargar canales directamente ──
+  // ── FLUJO LOCATION INSTALL: cargar canales directamente ────────────────────
+
   if (locationId) {
-    loadExistingChannels(locationId);
+    showFormForLocation(locationId, '1');
+    setStep(1);
   }
 
-  // ── SUBMIT ──
+  // ── SUBMIT ──────────────────────────────────────────────────────────────────
+
   document.getElementById('setup-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     hideAlerts();
 
     if (!selectedLocationId) {
-      showAlert('error', '❌ Selecciona una subcuenta primero.');
+      showAlert('error', 'Selecciona una subcuenta primero.');
       return;
     }
 
-    const btn      = document.getElementById('submit-btn');
-    const spinner  = document.getElementById('spinner');
-    const btnText  = document.getElementById('btn-text');
-    const countryCode = document.getElementById('countryCode').value;
-    const phoneRaw    = document.getElementById('phoneNumber').value.replace(/\D/g, '');
-    const phone       = countryCode + phoneRaw;
+    const btn       = document.getElementById('submit-btn');
+    const spinner   = document.getElementById('spinner');
+    const btnText   = document.getElementById('btn-text');
+    const countryCode       = document.getElementById('countryCode').value;
+    const phoneRaw          = document.getElementById('phoneNumber').value.replace(/\D/g, '');
+    const phone             = countryCode + phoneRaw;
     const evolutionInstance = document.getElementById('evolutionInstance').value.trim() || undefined;
 
     if (!phoneRaw) {
-      showAlert('error', '❌ Ingresa un número de teléfono válido.');
+      showAlert('error', 'Ingresa un número de teléfono válido.');
       return;
     }
 
     btn.disabled = true;
     spinner.style.display = 'block';
-    btnText.textContent = 'Configurando…';
+    btnText.textContent = 'Configurando...';
     setStep(2);
 
     try {
       const res = await fetch('/api/ghl-channels/setup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ locationId: selectedLocationId, phoneNumber: phone, evolutionInstance, companyId: companyId || undefined })
+        body: JSON.stringify({
+          locationId: selectedLocationId,
+          phoneNumber: phone,
+          evolutionInstance,
+          companyId: companyId || undefined
+        })
       });
 
       const data = await res.json();
       if (!res.ok) throw new Error(data.details || data.error || 'Error desconocido');
 
       setStep(3);
-      showAlert('success',
-        `✅ Canal configurado.<br>
-         Número: <strong>+${phone}</strong><br>
-         ${data.evolutionInstance ? 'Instancia: <strong>' + data.evolutionInstance + '</strong>' : ''}
-         <br><br>Ya puedes enviar y recibir mensajes desde GoHighLevel.`
-      );
+
+      // Si hay QR, mostrarlo y arrancar polling
+      if (data.qrBase64) {
+        const qrSection = document.getElementById('section-qr');
+        const qrImg     = document.getElementById('qr-img');
+        qrImg.src = 'data:image/png;base64,' + data.qrBase64;
+        qrSection.style.display = 'block';
+
+        const instanceName = data.evolutionInstance || evolutionInstance;
+        if (instanceName) startQrPolling(instanceName);
+
+        btnText.textContent = 'Escanea el QR';
+      } else {
+        showAlert('success',
+          `Canal configurado.<br>
+           Numero: <strong>+${phone}</strong><br>
+           ${data.evolutionInstance ? 'Instancia: <strong>' + data.evolutionInstance + '</strong>' : ''}
+           <br><br>Ya puedes enviar y recibir mensajes desde GoHighLevel.`
+        );
+        btnText.textContent = 'Listo';
+      }
+
       btn.disabled = false;
       spinner.style.display = 'none';
-      btnText.textContent = '✓ Listo';
 
-      // Recargar canales
+      // Recargar canales y limpiar campos
       loadExistingChannels(selectedLocationId);
       document.getElementById('phoneNumber').value = '';
       document.getElementById('evolutionInstance').value = '';
 
     } catch (err) {
-      setStep(1);
-      showAlert('error', '❌ ' + err.message);
+      setStep(locationId ? 1 : 2);
+      showAlert('error', err.message);
       btn.disabled = false;
       spinner.style.display = 'none';
       btnText.textContent = 'Conectar WhatsApp';
     }
   });
+
+  // ── Helper ──────────────────────────────────────────────────────────────────
+
+  function escapeHtml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
 </script>
 </body>
 </html>
