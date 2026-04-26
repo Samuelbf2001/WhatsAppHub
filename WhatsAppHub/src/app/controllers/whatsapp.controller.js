@@ -281,9 +281,15 @@ export const receiveMessage = async (req, res) => {
       whatsapp.markMessageAsRead(messageData.messageId, messageData.remoteJid).catch(() => {});
     }
 
-    const bufferKey = `${isGHL ? 'ghl' : 'hs'}:${tenantId}:${messageData.remoteJid}`;
-    const flushFn   = isGHL ? flushToGHL : flushToHubSpot;
-    addToBuffer(bufferKey, messageData, channelAccount, tenantId, flushFn);
+    if (isGHL) {
+      // GHL no necesita buffer — cada mensaje llega inmediatamente
+      setImmediate(() => flushToGHL([messageData], channelAccount, tenantId)
+        .catch(err => console.error('[GHL flush directo]', err.message)));
+      return;
+    }
+
+    const bufferKey = `hs:${tenantId}:${messageData.remoteJid}`;
+    addToBuffer(bufferKey, messageData, channelAccount, tenantId, flushToHubSpot);
 
   } catch (error) {
     console.error('❌ Error procesando webhook de WhatsApp:', error.response?.data || error.message);
