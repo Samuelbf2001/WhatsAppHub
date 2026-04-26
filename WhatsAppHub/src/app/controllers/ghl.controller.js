@@ -53,17 +53,27 @@ async function getLocationTokenFromCompany(companyId, locationId) {
   return access_token;
 }
 
+// Caché en memoria: locationId → { token: string, expiresAt: number }
+const _tokenCache = new Map();
+
 /**
  * Obtiene un access token válido para un locationId.
  * Si no hay token de location, busca un company token y genera uno.
  * Refresca automáticamente si está expirado.
  */
 export async function getValidGHLToken(locationId, companyId = null) {
+  const cached = _tokenCache.get(locationId);
+  if (cached && cached.expiresAt - Date.now() > 2 * 60 * 1000) {
+    return cached.token;
+  }
+
   let tokens = await getGHLTokens(locationId);
 
   // Si no hay token de location pero sí companyId, generar desde company token
   if (!tokens && companyId) {
-    return getLocationTokenFromCompany(companyId, locationId);
+    const token = await getLocationTokenFromCompany(companyId, locationId);
+    _tokenCache.set(locationId, { token, expiresAt: Date.now() + 86400 * 1000 });
+    return token;
   }
 
   if (!tokens) {
@@ -77,9 +87,12 @@ export async function getValidGHLToken(locationId, companyId = null) {
     console.log(`🔄 Refrescando token GHL para location ${locationId}`);
     const refreshed = await refreshGHLToken(tokens.refresh_token);
     await updateGHLAccessToken(locationId, refreshed.accessToken, refreshed.expiresIn);
+    const newExpiresAt = Date.now() + (refreshed.expiresIn || 86400) * 1000;
+    _tokenCache.set(locationId, { token: refreshed.accessToken, expiresAt: newExpiresAt });
     return refreshed.accessToken;
   }
 
+  _tokenCache.set(locationId, { token: tokens.access_token, expiresAt });
   return tokens.access_token;
 }
 

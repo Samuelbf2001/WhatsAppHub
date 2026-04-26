@@ -32,6 +32,12 @@ const buffers = new Map();
  * @param {function(messages: Array, channelAccount: object, portalId: string): Promise<void>} onFlush
  */
 export function addToBuffer(bufferKey, messageData, channelAccount, portalId, onFlush) {
+  if (BUFFER_WINDOW_MS === 0) {
+    setImmediate(() => onFlush([messageData], channelAccount, portalId)
+      .catch(err => console.error(`[MessageBuffer] Error flush inmediato ${bufferKey}:`, err.message)));
+    return;
+  }
+
   if (!buffers.has(bufferKey)) {
     buffers.set(bufferKey, { messages: [], timer: null, channelAccount, portalId });
   }
