@@ -933,7 +933,18 @@ export const handleGHLWebhook = async (req, res) => {
       instance: channelAccount.evolution_instance || process.env.EVOLUTION_INSTANCE,
     });
 
-    const formattedPhone = whatsapp.formatPhoneNumber(phone);
+    // Detectar si el destino es un grupo: los JIDs de grupo tienen >15 dígitos
+    // (E.164 máximo es 15; grupos de WhatsApp tienen ~18 dígitos en el JID)
+    const phoneDigits = phone.replace(/\D/g, '');
+    const isGroupDest = phoneDigits.length > 15;
+    const formattedPhone = isGroupDest
+      ? `${phoneDigits}@g.us`          // JID de grupo para Evolution API
+      : whatsapp.formatPhoneNumber(phone);
+
+    if (isGroupDest) {
+      console.log(`👥 Destino detectado como grupo: ${formattedPhone}`);
+    }
+
     await whatsapp.sendTextMessage(formattedPhone, message);
 
     console.log(`✅ Mensaje GHL enviado via WhatsApp a ${formattedPhone}`);

@@ -32,13 +32,27 @@ export default class EvolutionAPIProvider extends WhatsAppProvider {
   }
 
   async sendTextMessage(to, message) {
-    const number = to.replace(/^\+/, ''); // EvolutionAPI no acepta el +
+    // Si ya es un JID completo (contiene @), enviarlo tal cual (ej: grupos @g.us)
+    const number = to.includes('@') ? to : to.replace(/^\+/, '');
     const { data } = await axios.post(
       `${this.baseUrl}/message/sendText/${this.instance}`,
       { number, text: message, delay: 0 },
       { headers: this.headers }
     );
     return { messageId: data.key?.id };
+  }
+
+  async getGroupInfo(groupJid) {
+    try {
+      const { data } = await axios.get(
+        `${this.baseUrl}/group/findGroupInfos/${this.instance}`,
+        { params: { groupJid }, headers: this.headers }
+      );
+      return data;
+    } catch (err) {
+      console.warn(`[EvolutionAPI] No se pudo obtener info del grupo ${groupJid}: ${err.message}`);
+      return null;
+    }
   }
 
   async sendMedia(to, { mediatype, mimetype, url, caption, fileName }) {
@@ -216,7 +230,7 @@ export default class EvolutionAPIProvider extends WhatsAppProvider {
         contactName:  data.pushName || null,
         text,
         mediaType,                          // null = texto, "image"|"video"|etc. = media
-        timestamp:    data.messageTimestamp,
+        timestamp:    (data.messageTimestamp || 0) * 1000,  // Evolution sends Unix seconds → convert to ms
         type:         mediaType ? 'media' : 'text',
         isGroup,
         groupJid:     isGroup ? remoteJid : null,

@@ -52,4 +52,8 @@ export default class WhatsAppService {
   formatPhoneNumber(phoneNumber) {
     return this.provider.formatPhoneNumber(phoneNumber);
   }
+
+  async getGroupInfo(groupJid) {
+    return this.provider.getGroupInfo(groupJid);
+  }
 }

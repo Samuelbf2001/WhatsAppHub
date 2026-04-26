@@ -42,6 +42,15 @@ export default class WhatsAppProvider {
   }
 
   /**
+   * Obtener información de un grupo (nombre, participantes, etc.)
+   * @param {string} groupJid - JID del grupo (ej: 120363XXXXX@g.us)
+   * @returns {Promise<{ subject: string, ... } | null>}
+   */
+  async getGroupInfo(groupJid) {
+    return null; // implementar en cada proveedor que lo soporte
+  }
+
+  /**
    * Formatear número de teléfono al formato E.164
    * @param {string} phoneNumber
    * @returns {string}

@@ -5,9 +5,13 @@ const GHL_PROVIDER_ID = process.env.GHL_CONVERSATION_PROVIDER_ID || '69ea36f7891
 
 /**
  * Busca un contacto por teléfono en GHL. Si no existe, lo crea.
+ * @param {string} accessToken
+ * @param {string} locationId
+ * @param {string} phone - Número en E.164 o con dígitos
+ * @param {string|null} name - Nombre opcional (ej: nombre del grupo). Si null, usa el número.
  * Retorna el contactId de GHL.
  */
-export async function findOrCreateGHLContact(accessToken, locationId, phone) {
+export async function findOrCreateGHLContact(accessToken, locationId, phone, name = null) {
   const headers = {
     Authorization: `Bearer ${accessToken}`,
     Version: '2021-07-28',
@@ -16,9 +20,9 @@ export async function findOrCreateGHLContact(accessToken, locationId, phone) {
 
   // Normalizar a E.164 sin el +
   const normalized = phone.replace(/\D/g, '');
+  const defaultName = `+${normalized}`;
 
   // Buscar contacto existente por teléfono
-  // GHL /contacts/search/duplicate requiere "number" + "type", no "phone"
   try {
     const searchRes = await axios.get(`${GHL_BASE_URL}/contacts/search/duplicate`, {
       headers,
@@ -27,6 +31,13 @@ export async function findOrCreateGHLContact(accessToken, locationId, phone) {
     const contact = searchRes.data?.contact;
     if (contact?.id) {
       console.log(`👤 Contacto GHL encontrado: ${contact.id} para +${normalized}`);
+      // Si tenemos un nombre mejor y el contacto tiene el nombre genérico (= número), actualizarlo
+      if (name && contact.name === defaultName) {
+        try {
+          await axios.put(`${GHL_BASE_URL}/contacts/${contact.id}`, { name }, { headers });
+          console.log(`✏️ Nombre GHL actualizado: ${contact.id} → "${name}"`);
+        } catch { /* ignorar errores de actualización de nombre */ }
+      }
       return contact.id;
     }
   } catch (err) {
@@ -35,16 +46,16 @@ export async function findOrCreateGHLContact(accessToken, locationId, phone) {
     }
   }
 
-  // Crear contacto nuevo
+  // Crear contacto nuevo con nombre real si está disponible
   try {
     const createRes = await axios.post(`${GHL_BASE_URL}/contacts`, {
       locationId,
       phone: `+${normalized}`,
-      name: `+${normalized}`,
+      name: name || defaultName,
     }, { headers });
     // GHL v2 puede devolver { contact: { id } } o { id } directamente
     const newContactId = createRes.data?.contact?.id || createRes.data?.id;
-    console.log(`✅ Contacto GHL creado: ${newContactId} para +${normalized}`);
+    console.log(`✅ Contacto GHL creado: ${newContactId} para +${normalized} (nombre: "${name || defaultName}")`);
     return newContactId;
   } catch (err) {
     // Si el location tiene "no duplicados" activado, GHL retorna 400 con el contactId existente en meta

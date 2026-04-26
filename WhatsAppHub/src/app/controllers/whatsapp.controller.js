@@ -121,7 +121,7 @@ async function flushToGHL(messages, channelAccount, locationId) {
 
   const accessToken = await getValidGHLToken(locationId, channelAccount.company_id || null);
   console.log(`🔑 Token GHL obtenido para ${locationId}: ${accessToken ? accessToken.slice(0,20)+'...' : 'NULL'}`);
-  const contactId   = await findOrCreateGHLContact(accessToken, locationId, merged.phoneNumber);
+  const contactId   = await findOrCreateGHLContact(accessToken, locationId, merged.phoneNumber, merged.contactName);
   console.log(`👤 ContactId GHL: ${contactId}`);
 
   await publishInboundMessageToGHL(accessToken, locationId, contactId, {
@@ -205,9 +205,22 @@ export const receiveMessage = async (req, res) => {
       }
       // Usar el número del grupo como identificador del contacto ficticio
       messageData.phoneNumber = `+${groupNumber}`;
-      // Añadir el participante al inicio del texto para identificar quién habló
-      if (messageData.participant) {
-        messageData.text = `[${messageData.participant}]: ${messageData.text}`;
+
+      // Nombre del remitente para pie de mensaje (pushName del webhook o número)
+      const senderLabel = messageData.contactName || messageData.participant;
+
+      // Obtener nombre real del grupo desde Evolution API
+      try {
+        const groupInfo = await whatsapp.getGroupInfo(messageData.groupJid);
+        const groupName = groupInfo?.subject || groupInfo?.name || null;
+        messageData.contactName = groupName || `Grupo ${groupNumber}`;
+      } catch {
+        messageData.contactName = `Grupo ${groupNumber}`;
+      }
+
+      // Añadir remitente al FINAL del mensaje para identificar quién habló
+      if (senderLabel) {
+        messageData.text = `${messageData.text}\n\n— ${senderLabel}`;
       }
     }
 
