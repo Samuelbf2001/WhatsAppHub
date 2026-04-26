@@ -29,16 +29,22 @@ async function getLocationTokenFromCompany(companyId, locationId) {
   const companyTokens = await getGHLTokens(companyKey);
   if (!companyTokens) throw new Error(`No hay company token GHL para ${companyId}`);
 
-  const res = await axios.post('https://services.leadconnectorhq.com/oauth/locationToken',
-    new URLSearchParams({ companyId, locationId }),
-    {
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        Authorization: `Bearer ${companyTokens.access_token}`,
-        Version: '2021-07-28',
-      },
-    }
-  );
+  let res;
+  try {
+    res = await axios.post('https://services.leadconnectorhq.com/oauth/locationToken',
+      new URLSearchParams({ companyId, locationId }),
+      {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          Authorization: `Bearer ${companyTokens.access_token}`,
+          Version: '2021-07-28',
+        },
+      }
+    );
+  } catch (axiosErr) {
+    const ghlMsg = axiosErr.response?.data?.message || axiosErr.message;
+    throw new Error(`No se pudo generar location token desde company: ${ghlMsg}`);
+  }
 
   const { access_token, expires_in } = res.data;
   // Guardar location token para uso futuro
@@ -274,9 +280,17 @@ export const setupGHLChannel = async (req, res) => {
 
   try {
     // 1. VALIDAR que locationId tiene tokens OAuth válidos
-    const tokens = await getValidGHLToken(locationId, companyId);
-    if (!tokens) {
-      return res.status(400).json({ error: 'Location no autorizado — falta OAuth token' });
+    let accessToken;
+    try {
+      accessToken = await getValidGHLToken(locationId, companyId);
+    } catch (authErr) {
+      return res.status(400).json({
+        error: 'Location no autorizado — verifica que la app esté instalada en GHL',
+        details: authErr.message,
+      });
+    }
+    if (!accessToken) {
+      return res.status(400).json({ error: 'No se encontraron tokens OAuth para este locationId' });
     }
 
     const formattedPhone = phoneNumber.replace(/\D/g, '');
