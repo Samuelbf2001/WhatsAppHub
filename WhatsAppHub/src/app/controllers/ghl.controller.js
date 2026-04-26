@@ -139,7 +139,118 @@ export const oauthCallback = async (req, res) => {
   }
 };
 
-// POST /api/ghl-channels/setup — asociar número WhatsApp a un location GHL
+/**
+ * Helper: obtiene el estado de una instancia Evolution con timeout.
+ * Retorna { state, instanceState } o null si timeout/error.
+ */
+async function getEvolutionInstanceState(evoBase, instanceName, evoApiKey) {
+  try {
+    const r = await fetch(`${evoBase}/instance/connectionState/${encodeURIComponent(instanceName)}`, {
+      headers: { apikey: evoApiKey },
+      signal: AbortSignal.timeout(3000), // Timeout 3s máximo
+    });
+    if (!r.ok) return null;
+    const data = await r.json();
+    return { state: data.instance?.state ?? 'unknown' };
+  } catch (error) {
+    console.warn(`⚠️ No se pudo obtener estado de instancia: ${error.message}`);
+    return null;
+  }
+}
+
+/**
+ * Helper: obtiene QR de una instancia Evolution con timeout.
+ * Retorna { base64, code } o null si timeout/error.
+ */
+async function getEvolutionQRCode(evoBase, instanceName, evoApiKey) {
+  try {
+    const r = await fetch(`${evoBase}/instance/connect/${encodeURIComponent(instanceName)}`, {
+      headers: { apikey: evoApiKey },
+      signal: AbortSignal.timeout(3000), // Timeout 3s máximo
+    });
+    if (!r.ok) return null;
+    const data = await r.json();
+    return { base64: data.base64 || null, code: data.code || null };
+  } catch (error) {
+    console.warn(`⚠️ No se pudo obtener QR: ${error.message}`);
+    return null;
+  }
+}
+
+// GET /api/ghl-channels/validate/:locationId — valida si locationId está listo para crear QR
+export const validateGHLChannelLocation = async (req, res) => {
+  const { locationId } = req.params;
+  if (!locationId) {
+    return res.status(400).json({ error: 'locationId es requerido' });
+  }
+
+  try {
+    // 1. Validar que existe token OAuth para este locationId
+    const tokens = await getGHLTokens(locationId);
+    const hasTokens = !!tokens;
+
+    // Si no tiene tokens, retornar early
+    if (!hasTokens) {
+      return res.json({
+        locationId,
+        hasTokens: false,
+        instanceExists: false,
+        readyForQR: false,
+      });
+    }
+
+    // 2. Si está configurado Evolution, verificar instancia
+    const evoBase = process.env.EVOLUTION_API_URL;
+    const evoApiKey = process.env.EVOLUTION_API_KEY;
+    let instanceExists = false;
+    let instanceName = null;
+    let instanceState = 'unknown';
+
+    // Buscar cualquier instancia GHL para este location en Evolution
+    if (evoBase && evoApiKey) {
+      try {
+        const r = await fetch(`${evoBase}/instance/fetchInstances`, {
+          headers: { apikey: evoApiKey },
+          signal: AbortSignal.timeout(3000),
+        });
+        if (r.ok) {
+          const data = await r.json();
+          const instances = Array.isArray(data) ? data : (data.data || []);
+          const ghlInstance = instances.find(i => {
+            const iName = i.instance?.instanceName || i.instanceName || '';
+            return iName.startsWith(`ghl_${locationId}_`);
+          });
+          if (ghlInstance) {
+            instanceExists = true;
+            instanceName = ghlInstance.instance?.instanceName || ghlInstance.instanceName;
+            // Intentar obtener el estado
+            const stateData = await getEvolutionInstanceState(evoBase, instanceName, evoApiKey);
+            if (stateData) {
+              instanceState = stateData.state;
+            }
+          }
+        }
+      } catch (error) {
+        console.warn(`⚠️ No se pudo verificar instancias Evolution: ${error.message}`);
+      }
+    }
+
+    // 3. Retornar objeto de validación
+    res.json({
+      locationId,
+      hasTokens,
+      instanceExists,
+      ...(instanceName && { instanceName }),
+      ...(instanceState !== 'unknown' && { instanceState }),
+      readyForQR: hasTokens && (instanceExists || !!evoBase), // Listo si hay tokens y (Evolution existe o está disponible)
+    });
+  } catch (error) {
+    console.error('❌ Error en validateGHLChannelLocation:', error.message);
+    res.status(500).json({ error: 'Error validando location GHL', details: error.message });
+  }
+};
+
+// POST /api/ghl-channels/setup — MEJORADO: setup automático + obtener QR
 export const setupGHLChannel = async (req, res) => {
   let { locationId, phoneNumber, evolutionInstance, companyId } = req.body;
 
@@ -151,51 +262,84 @@ export const setupGHLChannel = async (req, res) => {
   locationId = locationId.split('/')[0].trim();
 
   try {
+    // 1. VALIDAR que locationId tiene tokens OAuth válidos
+    const tokens = await getValidGHLToken(locationId, companyId);
+    if (!tokens) {
+      return res.status(400).json({ error: 'Location no autorizado — falta OAuth token' });
+    }
+
     const formattedPhone = phoneNumber.replace(/\D/g, '');
     const provider = (process.env.WHATSAPP_PROVIDER || 'evolution').toLowerCase();
     const providerData = { provider };
+    let qrBase64 = null;
+    let instanceState = 'unknown';
 
     if (provider === 'evolution') {
+      const evoBase = process.env.EVOLUTION_API_URL;
+      const evoApiKey = process.env.EVOLUTION_API_KEY;
+
+      if (!evoBase || !evoApiKey) {
+        return res.status(400).json({ error: 'Evolution no está configurado en backend' });
+      }
+
       const instanceName = evolutionInstance || `ghl_${locationId}_${formattedPhone}`;
-      // Usar URL interna Docker si está definida (evita hairpin NAT entre contenedores)
-      const webhookBase  = process.env.WEBHOOK_INTERNAL_URL || process.env.WEBHOOK_BASE_URL;
-      const webhookUrl   = `${webhookBase}/whatsapp-webhook?locationId=${locationId}`;
-      const evoBase      = process.env.EVOLUTION_API_URL;
-      const evoApiKey    = process.env.EVOLUTION_API_KEY;
-      let instanceId     = null;
+      const webhookBase = process.env.WEBHOOK_INTERNAL_URL || process.env.WEBHOOK_BASE_URL;
+      const webhookUrl = `${webhookBase}/whatsapp-webhook?locationId=${locationId}`;
+      let instanceId = null;
       let instanceApikey = null;
 
-      // Verificar si la instancia ya existe
+      // 2. CHEQUEAR si instancia existe en Evolution
       let instanceExists = false;
       try {
-        const checkRes  = await fetch(`${evoBase}/instance/fetchInstances`, {
+        const checkRes = await fetch(`${evoBase}/instance/fetchInstances`, {
           headers: { apikey: evoApiKey },
+          signal: AbortSignal.timeout(3000),
         });
-        const checkData = await checkRes.json();
-        const instances = Array.isArray(checkData) ? checkData : (checkData.data || []);
-        instanceExists  = instances.some(i => i.instance?.instanceName === instanceName || i.instanceName === instanceName);
-      } catch {}
+        if (checkRes.ok) {
+          const checkData = await checkRes.json();
+          const instances = Array.isArray(checkData) ? checkData : (checkData.data || []);
+          instanceExists = instances.some(i => i.instance?.instanceName === instanceName || i.instanceName === instanceName);
+        }
+      } catch (error) {
+        console.warn(`⚠️ No se pudo verificar instancia (timeout/error): ${error.message}`);
+        // No fallar — intentar crear de todos modos
+      }
 
       if (instanceExists) {
-        // Instancia existente — solo actualizar el webhook
+        // INSTANCIA EXISTE: actualizar webhook + obtener QR si no está conectado
         console.log(`ℹ️ Instancia ${instanceName} ya existe, actualizando webhook...`);
         try {
           await fetch(`${evoBase}/webhook/set/${instanceName}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', apikey: evoApiKey },
             body: JSON.stringify({
-              url:              webhookUrl,
+              url: webhookUrl,
               webhook_by_events: false,
-              webhook_base64:   false,
-              events:           ['MESSAGES_UPSERT', 'CONNECTION_UPDATE', 'QRCODE_UPDATED'],
+              webhook_base64: false,
+              events: ['MESSAGES_UPSERT', 'CONNECTION_UPDATE', 'QRCODE_UPDATED'],
             }),
+            signal: AbortSignal.timeout(3000),
           });
           console.log(`✅ Webhook actualizado para instancia existente: ${instanceName}`);
         } catch (wErr) {
-          console.warn(`⚠️ No se pudo actualizar webhook de ${instanceName}: ${wErr.message}`);
+          console.warn(`⚠️ No se pudo actualizar webhook: ${wErr.message}`);
+        }
+
+        // Obtener estado actual
+        const stateData = await getEvolutionInstanceState(evoBase, instanceName, evoApiKey);
+        if (stateData) {
+          instanceState = stateData.state;
+        }
+
+        // Si no está 'open', intentar obtener QR para reconectar
+        if (instanceState !== 'open') {
+          const qrData = await getEvolutionQRCode(evoBase, instanceName, evoApiKey);
+          if (qrData) {
+            qrBase64 = qrData.base64;
+          }
         }
       } else {
-        // Instancia nueva — crear con webhook incluido
+        // INSTANCIA NO EXISTE: crear nueva
         try {
           const evoRes = await fetch(`${evoBase}/instance/create`, {
             method: 'POST',
@@ -205,50 +349,70 @@ export const setupGHLChannel = async (req, res) => {
               integration: 'WHATSAPP-BAILEYS',
               qrcode: true,
               webhook: {
-                url:      webhookUrl,
+                url: webhookUrl,
                 byEvents: false,
-                base64:   false,
-                events:   ['MESSAGES_UPSERT', 'CONNECTION_UPDATE', 'QRCODE_UPDATED'],
+                base64: false,
+                events: ['MESSAGES_UPSERT', 'CONNECTION_UPDATE', 'QRCODE_UPDATED'],
               },
             }),
+            signal: AbortSignal.timeout(5000),
           });
-          const evoData  = await evoRes.json();
-          instanceId     = evoData.instance?.instanceId || null;
-          instanceApikey = evoData.hash?.apikey || null;
-          console.log(`✅ Instancia Evolution GHL creada: ${instanceName}`);
+          if (evoRes.ok) {
+            const evoData = await evoRes.json();
+            instanceId = evoData.instance?.instanceId || null;
+            instanceApikey = evoData.hash?.apikey || null;
+            console.log(`✅ Instancia Evolution creada: ${instanceName}`);
+
+            // Obtener QR inmediatamente
+            const qrData = await getEvolutionQRCode(evoBase, instanceName, evoApiKey);
+            if (qrData) {
+              qrBase64 = qrData.base64;
+            }
+            instanceState = 'connecting';
+          } else {
+            console.warn(`⚠️ Error creating Evolution instance: ${evoRes.status}`);
+          }
         } catch (evoErr) {
           console.warn(`⚠️ No se pudo crear instancia Evolution: ${evoErr.message}`);
+          // No fallar — retornar error claro pero sin HTTP 500
+          return res.status(400).json({
+            error: 'No se pudo crear instancia Evolution',
+            details: evoErr.message,
+          });
         }
       }
 
-      providerData.evolutionInstance   = instanceName;
+      providerData.evolutionInstance = instanceName;
       providerData.evolutionInstanceId = instanceId;
-      providerData.evolutionApikey     = instanceApikey;
+      providerData.evolutionApikey = instanceApikey;
     }
 
     if (companyId) {
       providerData.companyId = companyId;
-      // Pre-generar location token desde el company token para que esté listo al llegar mensajes
       try {
         await getLocationTokenFromCompany(companyId, locationId);
         console.log(`✅ Location token pre-generado para ${locationId}`);
       } catch (tokErr) {
-        console.warn(`⚠️ No se pudo pre-generar location token para ${locationId}: ${tokErr.message}`);
+        console.warn(`⚠️ No se pudo pre-generar location token: ${tokErr.message}`);
       }
     }
 
+    // 3. Guardar en DB
     await saveGHLChannelAccount(locationId, formattedPhone, providerData);
 
+    // 4. RETORNAR respuesta normalizada
     res.json({
       success: true,
       locationId,
       phoneNumber: formattedPhone,
+      instanceName: providerData.evolutionInstance,
+      instanceState: instanceState,
+      qrBase64: qrBase64,
       provider,
-      ...(providerData.evolutionInstance && { evolutionInstance: providerData.evolutionInstance }),
-      ...(providerData.evolutionApikey   && { evolutionApikey: providerData.evolutionApikey }),
+      ...(providerData.evolutionApikey && { evolutionApikey: providerData.evolutionApikey }),
     });
   } catch (error) {
-    console.error('❌ Error en setup GHL channel:', error.message);
+    console.error('❌ Error en setupGHLChannel:', error.message);
     res.status(500).json({ error: 'Error configurando canal GHL', details: error.message });
   }
 };

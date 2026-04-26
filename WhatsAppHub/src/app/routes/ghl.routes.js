@@ -3,6 +3,7 @@ import {
   installGHL,
   oauthCallback,
   setupGHLChannel,
+  validateGHLChannelLocation,
   listGHLChannels,
   handleGHLWebhook,
   listCompanyLocations,
@@ -28,10 +29,11 @@ router.get('/api/ghl-channels/state/:instanceName', getGHLChannelState);
 router.delete('/api/ghl-channels/:id',              deleteGHLChannel);
 
 // API de canales GHL
-router.post('/api/ghl-channels/setup',           setupGHLChannel);
-router.get('/api/ghl-channels',                  listGHLChannels);
-router.get('/api/ghl-company/locations',         listCompanyLocations);
-router.post('/api/ghl-location/generate-token',  generateLocationToken);
-router.get('/api/ghl-debug',                     debugGHL);
+router.get('/api/ghl-channels/validate/:locationId',  validateGHLChannelLocation);
+router.post('/api/ghl-channels/setup',                setupGHLChannel);
+router.get('/api/ghl-channels',                       listGHLChannels);
+router.get('/api/ghl-company/locations',              listCompanyLocations);
+router.post('/api/ghl-location/generate-token',       generateLocationToken);
+router.get('/api/ghl-debug',                          debugGHL);
 
 export default router;
