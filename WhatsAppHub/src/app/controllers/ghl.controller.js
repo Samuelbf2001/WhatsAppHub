@@ -798,34 +798,37 @@ export const testGHLInbound = async (req, res) => {
 
   log('GHL:providerIdUsed', true, { PROVIDER_ID, appVersionId, candidates: candidateIds });
 
-  // ── 6. Publicar mensaje inbound — probar cada candidato ───────
+  // ── 6. Publicar mensaje — probar combinaciones type x provider ──
+  const typeVariants = ['Custom', 'TYPE_CUSTOM'];
   let publishOk = false;
-  for (const pid of candidateIds) {
-    try {
-      const payload = {
-        type: 'Custom',
-        locationId,
-        contactId,
-        conversationProviderId: pid,
-        message: `Test inbound WhatsAppHub 🚀 [provider=${pid}]`,
-        direction: 'inbound',
-        date: new Date().toISOString(),
-      };
-      const r = await axios.post('https://services.leadconnectorhq.com/conversations/messages/inbound', payload, { headers });
-      log('GHL:publishInbound', true, { conversationId: r.data?.conversationId, providerId: pid, response: r.data });
-      publishOk = true;
-      PROVIDER_ID = pid; // guardar el que funcionó
-      break;
-    } catch (e) {
-      log(`GHL:publishInbound[${pid}]`, false, {
-        status: e.response?.status,
-        body: e.response?.data,
-        error: e.message,
-      });
+  outer: for (const pid of candidateIds) {
+    for (const msgType of typeVariants) {
+      try {
+        const payload = {
+          type: msgType,
+          locationId,
+          contactId,
+          conversationProviderId: pid,
+          message: `Test WhatsAppHub [type=${msgType} pid=${pid.slice(-6)}]`,
+          direction: 'inbound',
+          date: new Date().toISOString(),
+        };
+        const r = await axios.post('https://services.leadconnectorhq.com/conversations/messages/inbound', payload, { headers });
+        log('GHL:publishInbound', true, { conversationId: r.data?.conversationId, type: msgType, providerId: pid });
+        publishOk = true;
+        PROVIDER_ID = pid;
+        break outer;
+      } catch (e) {
+        log(`GHL:publishInbound[${msgType}|${pid.slice(-8)}]`, false, {
+          status: e.response?.status,
+          body: e.response?.data,
+        });
+      }
     }
   }
   if (!publishOk) {
-    return res.json({ locationId, phone, steps, success: false, hint: 'Revisa GHL_CONVERSATION_PROVIDER_ID en el developer portal de GHL' });
+    return res.json({ locationId, phone, steps, success: false,
+      hint: 'Ambos type+provider fallaron. Busca el conversationProviderId correcto en marketplace.gohighlevel.com → tu app → Custom Conversation Provider' });
   }
 
   return res.json({ locationId, phone, steps, success: true });
