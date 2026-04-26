@@ -402,10 +402,34 @@ export const getGHLChannelState = async (req, res) => {
 export const deleteGHLChannel = async (req, res) => {
   const { id } = req.params;
   try {
-    const { deleteGHLChannelAccountById } = await import('../../db/ghlChannelRepository.js');
+    const { getGHLChannelAccountById, deleteGHLChannelAccountById } = await import('../../db/ghlChannelRepository.js');
+
+    // 1. Obtener datos del canal antes de eliminarlo
+    const channel = await getGHLChannelAccountById(id);
+    if (!channel) return res.status(404).json({ error: 'Canal no encontrado' });
+
+    // 2. Eliminar instancia de Evolution si existe
+    if (channel.evolution_instance) {
+      const evoBase = process.env.EVOLUTION_API_URL;
+      const evoApiKey = process.env.EVOLUTION_API_KEY;
+      try {
+        await fetch(`${evoBase}/instance/delete/${encodeURIComponent(channel.evolution_instance)}`, {
+          method: 'DELETE',
+          headers: { apikey: evoApiKey },
+          signal: AbortSignal.timeout(5000)
+        });
+        console.log(`✅ Instancia Evolution eliminada: ${channel.evolution_instance}`);
+      } catch (evoErr) {
+        console.warn(`⚠️ No se pudo eliminar instancia Evolution: ${evoErr.message}`);
+        // Continuar aunque falle Evolution — DB se sigue limpiando
+      }
+    }
+
+    // 3. Eliminar registro de DB
     const deleted = await deleteGHLChannelAccountById(id);
-    if (!deleted) return res.status(404).json({ error: 'Canal no encontrado' });
-    res.json({ success: true, id });
+    if (!deleted) return res.status(404).json({ error: 'Canal no encontrado en DB' });
+
+    res.json({ success: true, id, location_id: channel.location_id });
   } catch (error) {
     res.status(500).json({ error: 'Error eliminando canal GHL', details: error.message });
   }
