@@ -800,7 +800,7 @@ export const testGHLInbound = async (req, res) => {
 
   // ── 6. Publicar mensaje — probar TYPE_SMS (SMS provider replacement)
   //    El provider usa TYPE_SMS porque reemplaza al proveedor SMS, no es Custom Channel
-  const normalized = phone.replace(/\D/g, '');
+  const normalizedPhone = phone.replace(/\D/g, '');
   const typeVariants = [
     { type: 'TYPE_SMS', withProvider: true  },
     { type: 'TYPE_SMS', withProvider: false },
@@ -815,7 +815,7 @@ export const testGHLInbound = async (req, res) => {
         contactId,
         message: `Test WhatsAppHub [${msgType}${withProvider ? '+pid' : ''}]`,
         direction: 'inbound',
-        phone: `+${normalized}`,
+        phone: `+${normalizedPhone}`,
         date: new Date().toISOString(),
       };
       if (withProvider) payload.conversationProviderId = PROVIDER_ID;
