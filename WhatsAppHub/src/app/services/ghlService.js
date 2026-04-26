@@ -79,7 +79,7 @@ export async function publishInboundMessageToGHL(accessToken, locationId, contac
     message: messageData.text || '',
     direction: 'inbound',
     phone: messageData.phoneNumber || messageData.phone || '',
-    date: new Date(messageData.timestamp || Date.now()).toISOString(),
+    date: new Date(messageData.timestamp ? (messageData.timestamp < 1e12 ? messageData.timestamp * 1000 : messageData.timestamp) : Date.now()).toISOString(),
   };
 
   // Adjuntos de media
