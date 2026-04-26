@@ -751,22 +751,27 @@ export const testGHLInbound = async (req, res) => {
 
   // ── 5b. Descubrir conversationProviderId correcto ─────────────
   let PROVIDER_ID = process.env.GHL_CONVERSATION_PROVIDER_ID || '69ea36f789175e5da0ebc461';
-  try {
-    const r = await axios.get('https://services.leadconnectorhq.com/conversations/providers', {
-      headers,
-      params: { locationId },
-    });
-    const providers = r.data?.providers || r.data || [];
-    log('GHL:listProviders', true, { count: providers.length, providers: providers.map(p=>({id:p.id||p._id, name:p.name, type:p.type})) });
-    // Si hay providers personalizados, usar el primero de tipo Custom
-    const customProvider = providers.find(p => p.type === 'Custom' || p.type === 'custom');
-    if (customProvider) {
-      PROVIDER_ID = customProvider.id || customProvider._id;
-      log('GHL:providerIdResolved', true, { PROVIDER_ID });
+  const providerEndpoints = [
+    `/conversations/providers/customProviders`,
+    `/conversations/customProviders`,
+    `/locations/${locationId}/customProviders`,
+  ];
+  for (const ep of providerEndpoints) {
+    try {
+      const r = await axios.get(`https://services.leadconnectorhq.com${ep}`, {
+        headers,
+        params: ep.startsWith('/locations') ? undefined : { locationId },
+      });
+      const raw = r.data;
+      const providers = raw?.providers || raw?.customProviders || (Array.isArray(raw) ? raw : []);
+      log(`GHL:providers[${ep}]`, true, { raw: JSON.stringify(raw).slice(0,400) });
+      const found = providers.find(p => p.type === 'Custom' || p.type === 'custom' || p.id || p._id);
+      if (found) { PROVIDER_ID = found.id || found._id; break; }
+    } catch (e) {
+      log(`GHL:providers[${ep}]`, false, { status: e.response?.status, msg: e.response?.data?.error || e.message });
     }
-  } catch (e) {
-    log('GHL:listProviders', false, { status: e.response?.status, body: e.response?.data, note: 'will use env GHL_CONVERSATION_PROVIDER_ID' });
   }
+  log('GHL:providerIdUsed', true, { PROVIDER_ID });
 
   // ── 6. Publicar mensaje inbound ───────────────────────────────
   try {
