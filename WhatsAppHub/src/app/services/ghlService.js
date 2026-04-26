@@ -43,12 +43,6 @@ export async function findOrCreateGHLContact(accessToken, locationId, phone, nam
     if (contact?.id) {
       console.log(`👤 Contacto GHL encontrado: ${contact.id} para +${normalized}`);
       _contactCache.set(cacheKey, { contactId: contact.id, expiresAt: Date.now() + CONTACT_CACHE_TTL });
-      // Si tenemos un nombre mejor y el contacto tiene el nombre genérico (= número), actualizarlo
-      if (name && contact.name === defaultName) {
-        axios.put(`${GHL_BASE_URL}/contacts/${contact.id}`, { name }, { headers })
-          .then(() => console.log(`✏️ Nombre GHL actualizado: ${contact.id} → "${name}"`))
-          .catch(() => {});
-      }
       return contact.id;
     }
   } catch (err) {
@@ -101,7 +95,7 @@ export async function publishInboundMessageToGHL(accessToken, locationId, contac
     contactId,
     conversationProviderId: GHL_PROVIDER_ID,
     message: messageData.text || '',
-    direction: 'inbound',
+    direction: messageData.direction || 'inbound',
     phone: messageData.phoneNumber || messageData.phone || '',
     date: new Date(messageData.timestamp ? (messageData.timestamp < 1e12 ? messageData.timestamp * 1000 : messageData.timestamp) : Date.now()).toISOString(),
   };

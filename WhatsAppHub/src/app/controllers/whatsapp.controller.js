@@ -21,6 +21,23 @@ import { insertLog } from '../../db/logRepository.js';
 
 dotenv.config();
 
+// Caché en memoria de nombres de grupo (evita llamar getGroupInfo en cada mensaje)
+const _groupNameCache = new Map();
+
+async function resolveGroupName(whatsapp, groupJid, groupNumber) {
+  if (_groupNameCache.has(groupJid)) return _groupNameCache.get(groupJid);
+  try {
+    const info = await whatsapp.getGroupInfo(groupJid);
+    const name = info?.subject || info?.name || `Grupo ${groupNumber}`;
+    _groupNameCache.set(groupJid, name);
+    return name;
+  } catch {
+    const fallback = `Grupo ${groupNumber}`;
+    _groupNameCache.set(groupJid, fallback);
+    return fallback;
+  }
+}
+
 /**
  * Detecta el channelAccount correcto a partir del payload del webhook.
  * Prioridad:
@@ -194,33 +211,34 @@ export const receiveMessage = async (req, res) => {
     const messageData = whatsapp.processIncomingMessage(req.body);
     if (!messageData) return;
 
-    // Grupos: HubSpot no los soporta → ignorar; GHL sí (contacto ficticio por grupo)
+    // Mensajes enviados por nosotros (fromMe): solo interesan a GHL para historial
+    if (messageData.isFromMe && !isGHL) return;
+
+    // Grupos: HubSpot no los soporta; GHL sí (contacto ficticio por número de grupo)
     if (messageData.isGroup) {
       if (!isGHL) return;
-      // El número de teléfono del grupo es la parte numérica del JID (@g.us)
       const groupNumber = messageData.groupJid?.replace('@g.us', '') || null;
       if (!groupNumber) {
         console.warn('⚠️ Mensaje de grupo sin JID válido, ignorando');
         return;
       }
-      // Usar el número del grupo como identificador del contacto ficticio
       messageData.phoneNumber = `+${groupNumber}`;
 
-      // Nombre del remitente para pie de mensaje (pushName del webhook o número)
-      const senderLabel = messageData.contactName || messageData.participant;
+      if (!messageData.isFromMe) {
+        // Guardar nombre e identificador del remitente antes de sobreescribir contactName
+        const senderName  = messageData.contactName;   // pushName del remitente
+        const senderPhone = messageData.participant;   // número E.164 del remitente
 
-      // Obtener nombre real del grupo desde Evolution API
-      try {
-        const groupInfo = await whatsapp.getGroupInfo(messageData.groupJid);
-        const groupName = groupInfo?.subject || groupInfo?.name || null;
-        messageData.contactName = groupName || `Grupo ${groupNumber}`;
-      } catch {
-        messageData.contactName = `Grupo ${groupNumber}`;
-      }
+        // Nombre del grupo (una sola llamada a Evolution API, luego queda en caché)
+        messageData.contactName = await resolveGroupName(whatsapp, messageData.groupJid, groupNumber);
 
-      // Añadir remitente al FINAL del mensaje para identificar quién habló
-      if (senderLabel) {
-        messageData.text = `${messageData.text}\n\n— ${senderLabel}`;
+        // Pie de mensaje: "— Nombre (número)" o "— número" si no hay nombre
+        const senderLabel = (senderName && senderPhone && senderName !== senderPhone)
+          ? `${senderName} (${senderPhone})`
+          : (senderName || senderPhone);
+        if (senderLabel) {
+          messageData.text = `${messageData.text}\n\n— ${senderLabel}`;
+        }
       }
     }
 
@@ -229,7 +247,35 @@ export const receiveMessage = async (req, res) => {
       return;
     }
 
-    console.log(`📨 Mensaje entrante [${isGHL ? 'GHL' : 'HubSpot'}][${channelAccount.provider}]${messageData.isGroup ? ' [GRUPO]' : ''} ${messageData.phoneNumber} → "${messageData.text}" (tipo: ${messageData.type})`);
+    console.log(`📨 Mensaje ${messageData.isFromMe ? 'saliente (eco)' : 'entrante'} [${isGHL ? 'GHL' : 'HubSpot'}][${channelAccount.provider}]${messageData.isGroup ? ' [GRUPO]' : ''} ${messageData.phoneNumber} → "${messageData.text?.slice(0, 60)}" (tipo: ${messageData.type})`);
+
+    // fromMe → publicar directamente en GHL como mensaje saliente (sin buffer)
+    if (messageData.isFromMe) {
+      try {
+        const accessToken = await getValidGHLToken(locationId, channelAccount.company_id || null);
+        const contactId   = await findOrCreateGHLContact(accessToken, locationId, messageData.phoneNumber, null);
+        await publishInboundMessageToGHL(accessToken, locationId, contactId, {
+          text:        messageData.text,
+          mediaUrl:    messageData.mediaUrl || null,
+          timestamp:   messageData.timestamp,
+          phoneNumber: messageData.phoneNumber,
+          direction:   'outbound',
+        });
+        await insertLog(locationId, {
+          channelAccountId: channelAccount.id,
+          direction:        'outgoing',
+          customerPhone:    messageData.phoneNumber,
+          businessPhone:    channelAccount.whatsapp_phone_number,
+          messageText:      messageData.text,
+          status:           'success',
+          eventType:        'MESSAGE_ECHO',
+          provider:         channelAccount.provider || 'evolution',
+        });
+      } catch (err) {
+        console.error('❌ Error al hacer eco de mensaje fromMe a GHL:', err.message);
+      }
+      return;
+    }
 
     if (messageData.messageId && messageData.remoteJid) {
       whatsapp.markMessageAsRead(messageData.messageId, messageData.remoteJid).catch(() => {});

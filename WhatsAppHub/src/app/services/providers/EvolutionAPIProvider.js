@@ -146,7 +146,8 @@ export default class EvolutionAPIProvider extends WhatsAppProvider {
    *   }
    * }
    *
-   * Retorna null si debe ignorarse (fromMe=true, grupo, evento no relevante).
+   * Retorna null si debe ignorarse (evento no relevante).
+   * fromMe=true → retorna el mensaje con isFromMe:true (el controlador decide si ignorarlo o echarlo a GHL).
    */
   processIncomingWebhook(payload) {
     try {
@@ -157,8 +158,8 @@ export default class EvolutionAPIProvider extends WhatsAppProvider {
       const data = payload.data;
       if (!data) return null;
 
-      // Ignorar mensajes enviados por nosotros
-      if (data.key?.fromMe === true) return null;
+      // fromMe=true: mensajes enviados por nosotros (se echan en GHL para historial)
+      const isFromMe = data.key?.fromMe === true;
 
       const isGroup = data.key?.remoteJid?.endsWith('@g.us') === true;
 
@@ -232,6 +233,7 @@ export default class EvolutionAPIProvider extends WhatsAppProvider {
         mediaType,                          // null = texto, "image"|"video"|etc. = media
         timestamp:    (data.messageTimestamp || 0) * 1000,  // Evolution sends Unix seconds → convert to ms
         type:         mediaType ? 'media' : 'text',
+        isFromMe,
         isGroup,
         groupJid:     isGroup ? remoteJid : null,
         participant:  isGroup ? (rawParticipant ? `+${rawParticipant}` : null) : null,
