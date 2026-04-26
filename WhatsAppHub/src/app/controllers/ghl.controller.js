@@ -801,11 +801,15 @@ export const testGHLInbound = async (req, res) => {
   // ── 6. Publicar mensaje — probar TYPE_SMS (SMS provider replacement)
   //    El provider usa TYPE_SMS porque reemplaza al proveedor SMS, no es Custom Channel
   const normalizedPhone = phone.replace(/\D/g, '');
+  // Probar todos los type values que no dan 422 con el provider ID correcto
   const typeVariants = [
-    { type: 'Custom', withProvider: true,  withPhone: false },
-    { type: 'Custom', withProvider: false, withPhone: false },
-    { type: 'Custom', withProvider: true,  withPhone: true  },
-    { type: 'Custom', withProvider: false, withPhone: true  },
+    { type: 'Custom',    withProvider: true,  withPhone: false },
+    { type: 'SMS',       withProvider: true,  withPhone: true  },
+    { type: 'SMS',       withProvider: false, withPhone: true  },
+    { type: 'WhatsApp',  withProvider: true,  withPhone: true  },
+    { type: 'WhatsApp',  withProvider: false, withPhone: true  },
+    { type: 'Email',     withProvider: true,  withPhone: false },
+    { type: 'Live Chat', withProvider: true,  withPhone: false },
   ];
   let publishOk = false;
   for (const { type: msgType, withProvider, withPhone } of typeVariants) {
