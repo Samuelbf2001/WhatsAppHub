@@ -649,22 +649,56 @@
 
       setStep(3);
 
-      // Si hay QR, mostrarlo y arrancar polling
-      if (data.qrBase64) {
+      // instanceName: el backend devuelve data.instanceName (no data.evolutionInstance)
+      const resolvedInstance = data.instanceName || data.evolutionInstance || evolutionInstance;
+
+      // Si ya viene QR en la respuesta, mostrarlo directo
+      if (data.qrBase64 && resolvedInstance) {
         const qrSection = document.getElementById('section-qr');
         const qrImg     = document.getElementById('qr-img');
         qrImg.src = 'data:image/png;base64,' + data.qrBase64;
         qrSection.style.display = 'block';
-
-        const instanceName = data.evolutionInstance || evolutionInstance;
-        if (instanceName) startQrPolling(instanceName);
-
+        startQrPolling(resolvedInstance);
         btnText.textContent = 'Escanea el QR';
+      } else if (resolvedInstance && data.instanceState !== 'open') {
+        // No vino QR inmediato — intentar obtenerlo del proxy de QR
+        const qrSection = document.getElementById('section-qr');
+        const qrImg     = document.getElementById('qr-img');
+        qrImg.src = '';
+        qrSection.style.display = 'block';
+        document.getElementById('qr-polling-status').textContent = 'Generando QR...';
+        btnText.textContent = 'Escanea el QR';
+
+        // Intentar obtener QR cada 3s hasta que aparezca (máx 30s)
+        let attempts = 0;
+        const qrFetchTimer = setInterval(async () => {
+          attempts++;
+          try {
+            const qrRes  = await fetch('/api/ghl-channels/qr/' + encodeURIComponent(resolvedInstance));
+            const qrData = await qrRes.json();
+            if (qrData.base64) {
+              qrImg.src = qrData.base64.startsWith('data:') ? qrData.base64 : 'data:image/png;base64,' + qrData.base64;
+              clearInterval(qrFetchTimer);
+            } else if (qrData.code) {
+              // QR es texto, no imagen — renderizar con QR lib si está disponible
+              qrImg.alt = qrData.code;
+              clearInterval(qrFetchTimer);
+            }
+          } catch (_) {}
+          if (attempts >= 10) clearInterval(qrFetchTimer); // Máximo 30s
+        }, 3000);
+
+        startQrPolling(resolvedInstance);
+      } else if (data.instanceState === 'open') {
+        showAlert('success',
+          `Ya conectado. Número: <strong>+${phone}</strong> listo en GoHighLevel.`
+        );
+        btnText.textContent = 'Conectado';
+        loadExistingChannels(selectedLocationId);
       } else {
         showAlert('success',
-          `Canal configurado.<br>
-           Numero: <strong>+${phone}</strong><br>
-           ${data.evolutionInstance ? 'Instancia: <strong>' + data.evolutionInstance + '</strong>' : ''}
+          `Canal configurado. Número: <strong>+${phone}</strong><br>
+           ${resolvedInstance ? 'Instancia: <strong>' + escapeHtml(resolvedInstance) + '</strong>' : ''}
            <br><br>Ya puedes enviar y recibir mensajes desde GoHighLevel.`
         );
         btnText.textContent = 'Listo';
