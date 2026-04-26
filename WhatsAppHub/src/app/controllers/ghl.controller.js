@@ -714,7 +714,7 @@ export const testGHLInbound = async (req, res) => {
   try {
     const r = await axios.get('https://services.leadconnectorhq.com/contacts/search/duplicate', {
       headers,
-      params: { locationId, number: `+${normalized}`, type: 'PHONE' },
+      params: { locationId, number: `+${normalized}` },
     });
     contactId = r.data?.contact?.id || null;
     log('GHL:searchContact', true, { contactId, found: !!contactId });
@@ -749,8 +749,26 @@ export const testGHLInbound = async (req, res) => {
     }
   }
 
+  // ── 5b. Descubrir conversationProviderId correcto ─────────────
+  let PROVIDER_ID = process.env.GHL_CONVERSATION_PROVIDER_ID || '69ea36f789175e5da0ebc461';
+  try {
+    const r = await axios.get('https://services.leadconnectorhq.com/conversations/providers', {
+      headers,
+      params: { locationId },
+    });
+    const providers = r.data?.providers || r.data || [];
+    log('GHL:listProviders', true, { count: providers.length, providers: providers.map(p=>({id:p.id||p._id, name:p.name, type:p.type})) });
+    // Si hay providers personalizados, usar el primero de tipo Custom
+    const customProvider = providers.find(p => p.type === 'Custom' || p.type === 'custom');
+    if (customProvider) {
+      PROVIDER_ID = customProvider.id || customProvider._id;
+      log('GHL:providerIdResolved', true, { PROVIDER_ID });
+    }
+  } catch (e) {
+    log('GHL:listProviders', false, { status: e.response?.status, body: e.response?.data, note: 'will use env GHL_CONVERSATION_PROVIDER_ID' });
+  }
+
   // ── 6. Publicar mensaje inbound ───────────────────────────────
-  const PROVIDER_ID = process.env.GHL_CONVERSATION_PROVIDER_ID || '69ea36f789175e5da0ebc461';
   try {
     const payload = {
       type: 'Custom',

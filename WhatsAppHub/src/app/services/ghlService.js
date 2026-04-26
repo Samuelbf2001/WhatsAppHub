@@ -22,7 +22,7 @@ export async function findOrCreateGHLContact(accessToken, locationId, phone) {
   try {
     const searchRes = await axios.get(`${GHL_BASE_URL}/contacts/search/duplicate`, {
       headers,
-      params: { locationId, number: `+${normalized}`, type: 'PHONE' }
+      params: { locationId, number: `+${normalized}` }
     });
     const contact = searchRes.data?.contact;
     if (contact?.id) {
