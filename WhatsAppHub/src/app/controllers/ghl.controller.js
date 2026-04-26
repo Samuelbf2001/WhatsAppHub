@@ -845,6 +845,21 @@ export const testGHLInbound = async (req, res) => {
   return res.json({ locationId, phone, steps, success: true });
 };
 
+// Deduplicación de webhooks GHL — GHL puede enviar el mismo OutboundMessage dos veces
+const _processedGHLEvents = new Map(); // key → timestamp
+const GHL_DEDUP_TTL_MS = 30_000;
+
+function _isDuplicateGHLEvent(key) {
+  const now = Date.now();
+  // Limpiar entradas viejas
+  for (const [k, ts] of _processedGHLEvents) {
+    if (now - ts > GHL_DEDUP_TTL_MS) _processedGHLEvents.delete(k);
+  }
+  if (_processedGHLEvents.has(key)) return true;
+  _processedGHLEvents.set(key, now);
+  return false;
+}
+
 // POST /ghl/webhook — GHL envía aquí cuando el agente responde (Delivery URL)
 export const handleGHLWebhook = async (req, res) => {
   // Responder 200 inmediatamente
@@ -868,9 +883,19 @@ export const handleGHLWebhook = async (req, res) => {
       return;
     }
 
-    // Solo procesar mensajes salientes (OutboundMessage)
-    if (type !== 'OutboundMessage') {
-      console.log(`ℹ️ GHL evento [${type}] ignorado (no es OutboundMessage)`);
+    // GHL envía mensajes salientes con distintos tipos según el canal configurado:
+    // - 'OutboundMessage' → app marketplace webhook
+    // - 'SMS' / 'WhatsApp' / 'Custom' → Delivery URL de custom SMS/WhatsApp provider
+    const OUTBOUND_TYPES = ['OutboundMessage', 'SMS', 'WhatsApp', 'Custom'];
+    if (!OUTBOUND_TYPES.includes(type)) {
+      console.log(`ℹ️ GHL evento [${type}] ignorado (no es mensaje saliente)`);
+      return;
+    }
+
+    // Deduplicar — GHL envía el mismo evento dos veces en algunos setups
+    const dedupKey = `${body.conversationId}:${body.dateAdded ?? body.timestamp}:${body.contactId}`;
+    if (_isDuplicateGHLEvent(dedupKey)) {
+      console.log(`⏭️ GHL OutboundMessage duplicado ignorado [${dedupKey.slice(0, 60)}]`);
       return;
     }
 
@@ -881,9 +906,11 @@ export const handleGHLWebhook = async (req, res) => {
       // Procesamos igualmente para no perder el mensaje
     }
 
-    // GHL envía: to = número destino, body = texto del mensaje
-    const phone   = body.to;
-    const message = body.body;
+    // GHL usa campos distintos según el tipo de webhook:
+    // - OutboundMessage: body.to + body.body
+    // - SMS/WhatsApp/Custom (Delivery URL): body.phone + body.message
+    const phone   = body.to   || body.phone;
+    const message = body.body || body.message;
 
     console.log(`📤 GHL Webhook saliente [location: ${locationId}] → ${phone}: "${message?.slice(0, 60)}"`);
 
