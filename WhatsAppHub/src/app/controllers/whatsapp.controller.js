@@ -125,9 +125,10 @@ async function flushToGHL(messages, channelAccount, locationId) {
   console.log(`👤 ContactId GHL: ${contactId}`);
 
   await publishInboundMessageToGHL(accessToken, locationId, contactId, {
-    text:      merged.text,
-    mediaUrl:  merged.mediaUrl || null,
-    timestamp: merged.timestamp,
+    text:        merged.text,
+    mediaUrl:    merged.mediaUrl || null,
+    timestamp:   merged.timestamp,
+    phoneNumber: merged.phoneNumber,
   });
 
   await insertLog(locationId, {

@@ -69,10 +69,10 @@ export async function publishInboundMessageToGHL(accessToken, locationId, contac
     'Content-Type': 'application/json',
   };
 
-  // GHL SMS Provider replacement: type='TYPE_SMS', sin conversationProviderId
-  // (el provider se identifica por el token OAuth de la app instalada)
+  // GHL SMS Provider replacement: type='SMS' (no Custom, no TYPE_SMS)
+  // Requiere conversationProviderId + phone del remitente
   const payload = {
-    type: 'TYPE_SMS',
+    type: 'SMS',
     locationId,
     contactId,
     conversationProviderId: GHL_PROVIDER_ID,
