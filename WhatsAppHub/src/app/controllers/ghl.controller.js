@@ -3,7 +3,13 @@ import dotenv from 'dotenv';
 import WhatsAppService from '../services/whatsappService.js';
 import { findOrCreateGHLContact, publishInboundMessageToGHL, refreshGHLToken } from '../services/ghlService.js';
 import { saveGHLTokens, getGHLTokens, updateGHLAccessToken } from '../../db/ghlTokenRepository.js';
-import { saveGHLChannelAccount, getGHLChannelAccount } from '../../db/ghlChannelRepository.js';
+import {
+  saveGHLChannelAccount,
+  getGHLChannelAccount,
+  getAllGHLChannelAccounts,
+  getGHLChannelAccountById,
+  deleteGHLChannelAccountById,
+} from '../../db/ghlChannelRepository.js';
 import { insertLog } from '../../db/logRepository.js';
 import pool from '../../config/database.js';
 
@@ -517,7 +523,6 @@ export const debugGHL = async (req, res) => {
 export const listGHLChannels = async (req, res) => {
   const { locationId } = req.query;
   try {
-    const { getAllGHLChannelAccounts } = await import('../../db/ghlChannelRepository.js');
     const channels = await getAllGHLChannelAccounts(locationId || null);
     res.json({ success: true, channels });
   } catch (error) {
@@ -566,8 +571,6 @@ export const getGHLChannelState = async (req, res) => {
 export const deleteGHLChannel = async (req, res) => {
   const { id } = req.params;
   try {
-    const { getGHLChannelAccountById, deleteGHLChannelAccountById } = await import('../../db/ghlChannelRepository.js');
-
     // 1. Obtener datos del canal antes de eliminarlo
     const channel = await getGHLChannelAccountById(id);
     if (!channel) return res.status(404).json({ error: 'Canal no encontrado' });
