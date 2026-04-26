@@ -846,10 +846,14 @@ export const handleGHLWebhook = async (req, res) => {
     const type       = body.type;
     const locationId = body.locationId;
 
-    // Eventos del sistema GHL (INSTALL, UNINSTALL, etc.) — ignorar silenciosamente
+    // Log completo de todos los eventos GHL (ayuda a descubrir providerId real)
+    const providerId = body.conversationProviderId;
+    console.log(`📋 GHL evento [${type}] location=${locationId} provider=${providerId || 'N/A'} body=${JSON.stringify(body).slice(0,300)}`);
+
+    // Eventos del sistema GHL (INSTALL, UNINSTALL, etc.) — solo loguear, no procesar
     const SYSTEM_EVENTS = ['INSTALL', 'UNINSTALL', 'UPGRADE', 'DOWNGRADE'];
     if (SYSTEM_EVENTS.includes(type)) {
-      console.log(`ℹ️ GHL sistema evento [${type}] para location ${locationId} — ignorado`);
+      console.log(`ℹ️ GHL sistema evento [${type}] — body completo:`, JSON.stringify(body));
       return;
     }
 
@@ -859,11 +863,11 @@ export const handleGHLWebhook = async (req, res) => {
       return;
     }
 
-    // Solo procesar mensajes de nuestro Custom Conversation Provider
-    const providerId = body.conversationProviderId;
+    // Loguear el providerId real que GHL usa — aunque no sea el nuestro
     if (providerId && providerId !== GHL_PROVIDER_ID) {
-      console.log(`ℹ️ GHL OutboundMessage de provider [${providerId}] ignorado — no es nuestro canal`);
-      return;
+      console.log(`🔍 GHL OutboundMessage recibido con provider [${providerId}] — GHL_CONVERSATION_PROVIDER_ID actual=[${GHL_PROVIDER_ID}]`);
+      console.log(`   Si este ID es distinto, actualiza GHL_CONVERSATION_PROVIDER_ID en EasyPanel a: ${providerId}`);
+      // Procesamos igualmente para no perder el mensaje
     }
 
     // GHL envía: to = número destino, body = texto del mensaje
