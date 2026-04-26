@@ -802,32 +802,34 @@ export const testGHLInbound = async (req, res) => {
   //    El provider usa TYPE_SMS porque reemplaza al proveedor SMS, no es Custom Channel
   const normalizedPhone = phone.replace(/\D/g, '');
   const typeVariants = [
-    { type: 'TYPE_SMS', withProvider: true  },
-    { type: 'TYPE_SMS', withProvider: false },
-    { type: 'Custom',   withProvider: true  },
+    { type: 'Custom', withProvider: true,  withPhone: false },
+    { type: 'Custom', withProvider: false, withPhone: false },
+    { type: 'Custom', withProvider: true,  withPhone: true  },
+    { type: 'Custom', withProvider: false, withPhone: true  },
   ];
   let publishOk = false;
-  for (const { type: msgType, withProvider } of typeVariants) {
+  for (const { type: msgType, withProvider, withPhone } of typeVariants) {
     try {
       const payload = {
         type: msgType,
         locationId,
         contactId,
-        message: `Test WhatsAppHub [${msgType}${withProvider ? '+pid' : ''}]`,
+        message: `Test WhatsAppHub [pid=${withProvider} phone=${withPhone}]`,
         direction: 'inbound',
-        phone: `+${normalizedPhone}`,
         date: new Date().toISOString(),
       };
       if (withProvider) payload.conversationProviderId = PROVIDER_ID;
+      if (withPhone) payload.phone = `+${normalizedPhone}`;
 
       const r = await axios.post('https://services.leadconnectorhq.com/conversations/messages/inbound', payload, { headers });
       log('GHL:publishInbound', true, { conversationId: r.data?.conversationId, type: msgType, withProvider, providerId: withProvider ? PROVIDER_ID : null });
       publishOk = true;
       break;
     } catch (e) {
-      log(`GHL:publish[${msgType}|pid=${withProvider}]`, false, {
+      log(`GHL:publish[pid=${withProvider}|phone=${withPhone}]`, false, {
         status: e.response?.status,
         body: e.response?.data,
+        sentPayload: { type: msgType, withProvider, withPhone },
       });
     }
   }
