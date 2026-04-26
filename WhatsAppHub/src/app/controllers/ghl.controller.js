@@ -714,7 +714,7 @@ export const testGHLInbound = async (req, res) => {
   try {
     const r = await axios.get('https://services.leadconnectorhq.com/contacts/search/duplicate', {
       headers,
-      params: { locationId, phone: `+${normalized}` },
+      params: { locationId, number: `+${normalized}`, type: 'PHONE' },
     });
     contactId = r.data?.contact?.id || null;
     log('GHL:searchContact', true, { contactId, found: !!contactId });
@@ -733,12 +733,19 @@ export const testGHLInbound = async (req, res) => {
       contactId = r.data?.contact?.id || r.data?.id;
       log('GHL:createContact', true, { contactId, response: r.data });
     } catch (e) {
-      log('GHL:createContact', false, {
-        status: e.response?.status,
-        body: e.response?.data,
-        error: e.message,
-      });
-      return res.json({ locationId, phone, steps, success: false });
+      // Si el location tiene anti-dup, el 400 trae el contactId existente en meta
+      const existingId = e.response?.data?.meta?.contactId;
+      if (existingId) {
+        contactId = existingId;
+        log('GHL:createContact', true, { contactId, note: 'anti-dup: existing contact returned', body: e.response?.data });
+      } else {
+        log('GHL:createContact', false, {
+          status: e.response?.status,
+          body: e.response?.data,
+          error: e.message,
+        });
+        return res.json({ locationId, phone, steps, success: false });
+      }
     }
   }
 

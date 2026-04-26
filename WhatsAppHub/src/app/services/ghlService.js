@@ -17,11 +17,12 @@ export async function findOrCreateGHLContact(accessToken, locationId, phone) {
   // Normalizar a E.164 sin el +
   const normalized = phone.replace(/\D/g, '');
 
-  // Buscar primero
+  // Buscar contacto existente por teléfono
+  // GHL /contacts/search/duplicate requiere "number" + "type", no "phone"
   try {
     const searchRes = await axios.get(`${GHL_BASE_URL}/contacts/search/duplicate`, {
       headers,
-      params: { locationId, phone: `+${normalized}` }
+      params: { locationId, number: `+${normalized}`, type: 'PHONE' }
     });
     const contact = searchRes.data?.contact;
     if (contact?.id) {
@@ -35,22 +36,26 @@ export async function findOrCreateGHLContact(accessToken, locationId, phone) {
   }
 
   // Crear contacto nuevo
-  let createRes;
   try {
-    createRes = await axios.post(`${GHL_BASE_URL}/contacts`, {
+    const createRes = await axios.post(`${GHL_BASE_URL}/contacts`, {
       locationId,
       phone: `+${normalized}`,
       name: `+${normalized}`,
     }, { headers });
+    // GHL v2 puede devolver { contact: { id } } o { id } directamente
+    const newContactId = createRes.data?.contact?.id || createRes.data?.id;
+    console.log(`✅ Contacto GHL creado: ${newContactId} para +${normalized}`);
+    return newContactId;
   } catch (err) {
-    console.error(`❌ GHL create contact 400 body:`, JSON.stringify(err.response?.data));
+    // Si el location tiene "no duplicados" activado, GHL retorna 400 con el contactId existente en meta
+    const existingId = err.response?.data?.meta?.contactId;
+    if (existingId) {
+      console.log(`👤 Contacto GHL ya existe (anti-dup): ${existingId} para +${normalized}`);
+      return existingId;
+    }
+    console.error(`❌ GHL create contact error ${err.response?.status}:`, JSON.stringify(err.response?.data));
     throw err;
   }
-
-  // GHL v2 puede devolver { contact: { id } } o { id } directamente
-  const newContactId = createRes.data?.contact?.id || createRes.data?.id;
-  console.log(`✅ Contacto GHL creado: ${newContactId} para +${normalized}`);
-  return newContactId;
 }
 
 /**
