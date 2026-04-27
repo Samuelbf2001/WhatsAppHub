@@ -26,8 +26,23 @@ const GHL_PROVIDER_ID   = process.env.GHL_CONVERSATION_PROVIDER_ID || '69ea36f78
  */
 async function getLocationTokenFromCompany(companyId, locationId) {
   const companyKey = `company_${companyId}`;
-  const companyTokens = await getGHLTokens(companyKey);
+  let companyTokens = await getGHLTokens(companyKey);
   if (!companyTokens) throw new Error(`No hay company token GHL para ${companyId}`);
+
+  // Refrescar company token si está expirado o vence en menos de 5 min
+  const expiresAt = new Date(companyTokens.expires_at).getTime();
+  if (expiresAt - Date.now() < 5 * 60 * 1000) {
+    try {
+      console.log(`🔄 Refrescando company token GHL para ${companyId}`);
+      const refreshed = await refreshGHLToken(companyTokens.refresh_token);
+      await saveGHLTokens(companyKey, refreshed.accessToken, refreshed.refreshToken, refreshed.expiresIn);
+      companyTokens = { access_token: refreshed.accessToken };
+      console.log(`✅ Company token GHL refrescado para ${companyId}`);
+    } catch (refreshErr) {
+      console.warn(`⚠️ No se pudo refrescar company token: ${refreshErr.message}`);
+      // Continuar con el token existente — si también falla abajo, el error se propagará
+    }
+  }
 
   let res;
   try {
