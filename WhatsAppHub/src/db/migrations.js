@@ -146,6 +146,23 @@ export async function runMigrations() {
         ADD COLUMN IF NOT EXISTS company_id VARCHAR(100);
     `).catch(() => {});
 
+    await client.query(`
+      ALTER TABLE ghl_channel_accounts
+        ADD COLUMN IF NOT EXISTS display_name VARCHAR(255);
+    `).catch(() => {});
+
+    await client.query(`
+      ALTER TABLE ghl_channel_accounts
+        ADD COLUMN IF NOT EXISTS is_default BOOLEAN NOT NULL DEFAULT FALSE;
+    `).catch(() => {});
+
+    // Poblar display_name con el nombre de instancia existente
+    await client.query(`
+      UPDATE ghl_channel_accounts
+        SET display_name = COALESCE(evolution_instance, whatsapp_phone_number::text)
+        WHERE display_name IS NULL;
+    `).catch(() => {});
+
     console.log('✅ Migraciones ejecutadas correctamente');
   } catch (err) {
     console.error('❌ Error en migraciones:', err);

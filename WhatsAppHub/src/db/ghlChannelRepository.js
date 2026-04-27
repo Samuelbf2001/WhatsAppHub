@@ -33,8 +33,9 @@ export async function saveGHLChannelAccount(locationId, phoneNumber, providerDat
 }
 
 export async function getGHLChannelAccount(locationId) {
+  // Preferir el canal marcado como predeterminado; si no hay, el más reciente
   const { rows } = await pool.query(
-    'SELECT * FROM ghl_channel_accounts WHERE location_id = $1 AND authorized = TRUE ORDER BY created_at DESC LIMIT 1',
+    'SELECT * FROM ghl_channel_accounts WHERE location_id = $1 AND authorized = TRUE ORDER BY is_default DESC, created_at DESC LIMIT 1',
     [locationId]
   );
   return rows[0] || null;
@@ -71,6 +72,46 @@ export async function getGHLChannelAccountById(id) {
   const { rows } = await pool.query(
     'SELECT * FROM ghl_channel_accounts WHERE id = $1',
     [id]
+  );
+  return rows[0] || null;
+}
+
+export async function updateGHLChannelAccount(id, { displayName, isDefault } = {}) {
+  const updates = [];
+  const values = [];
+  let idx = 1;
+  if (displayName !== undefined) { updates.push(`display_name = $${idx++}`); values.push(displayName); }
+  if (isDefault  !== undefined) { updates.push(`is_default = $${idx++}`);   values.push(isDefault);  }
+  if (updates.length === 0) return;
+  values.push(id);
+  const { rows } = await pool.query(
+    `UPDATE ghl_channel_accounts SET ${updates.join(', ')} WHERE id = $${idx} RETURNING *`,
+    values
+  );
+  return rows[0] || null;
+}
+
+export async function setGHLChannelAsDefault(locationId, id) {
+  // Quitar default de todos los del location, luego poner en el elegido
+  await pool.query(
+    'UPDATE ghl_channel_accounts SET is_default = FALSE WHERE location_id = $1',
+    [locationId]
+  );
+  const { rows } = await pool.query(
+    'UPDATE ghl_channel_accounts SET is_default = TRUE WHERE id = $1 RETURNING *',
+    [id]
+  );
+  return rows[0] || null;
+}
+
+export async function getGHLChannelAccountByDisplayName(locationId, name) {
+  // Busca por display_name exacto o por evolution_instance (para el comando)
+  const { rows } = await pool.query(
+    `SELECT * FROM ghl_channel_accounts
+      WHERE location_id = $1 AND authorized = TRUE
+        AND (LOWER(display_name) = LOWER($2) OR LOWER(evolution_instance) = LOWER($2))
+      LIMIT 1`,
+    [locationId, name]
   );
   return rows[0] || null;
 }

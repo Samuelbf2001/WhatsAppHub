@@ -11,6 +11,7 @@ import {
   getGHLChannelQR,
   getGHLChannelState,
   deleteGHLChannel,
+  updateGHLChannel,
   debugGHL,
   testGHLInbound,
 } from '../controllers/ghl.controller.js';
@@ -27,6 +28,7 @@ router.post('/ghl/webhook',        handleGHLWebhook);
 // Proxy GHL (sin auth JWT — usados por GHLSetupPage standalone)
 router.get('/api/ghl-channels/qr/:instanceName',    getGHLChannelQR);
 router.get('/api/ghl-channels/state/:instanceName', getGHLChannelState);
+router.put('/api/ghl-channels/:id',                 updateGHLChannel);
 router.delete('/api/ghl-channels/:id',              deleteGHLChannel);
 
 // API de canales GHL

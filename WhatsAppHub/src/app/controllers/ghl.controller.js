@@ -10,6 +10,9 @@ import {
   getGHLChannelAccountById,
   getGHLChannelAccountByInstance,
   deleteGHLChannelAccountById,
+  updateGHLChannelAccount,
+  setGHLChannelAsDefault,
+  getGHLChannelAccountByDisplayName,
 } from '../../db/ghlChannelRepository.js';
 import { _lastChannelMap } from './whatsapp.controller.js';
 import { insertLog } from '../../db/logRepository.js';
@@ -957,13 +960,35 @@ export const handleGHLWebhook = async (req, res) => {
       return;
     }
 
+    // Comando de selección de canal: /{nombre}/ al inicio del mensaje
+    // Ej: "/ernesto/ Hola cliente" → envía por la instancia "ernesto"
+    let finalMessage = message;
+    let commandedChannel = null;
+    const cmdMatch = message.match(/^\/([^/]+)\//);
+    if (cmdMatch) {
+      const cmdName = cmdMatch[1].trim();
+      const found = await getGHLChannelAccountByDisplayName(locationId, cmdName);
+      if (found) {
+        commandedChannel = found;
+        finalMessage = message.slice(cmdMatch[0].length).trimStart() || message;
+        console.log(`🎯 Comando de canal detectado: /${cmdName}/ → instancia ${found.evolution_instance}`);
+      } else {
+        console.warn(`⚠️ Comando /${cmdName}/ no coincide con ningún canal de ${locationId} — usando routing normal`);
+      }
+    }
+
     // Buscar canal WhatsApp configurado para este location
-    // Preferir el canal que recibió el último mensaje del cliente (routing multi-número)
+    // Prioridad: comando explícito > último canal que recibió del cliente > predeterminado del location
     const mapKey = `${locationId}:${phone}`;
-    let channelAccount = _lastChannelMap.get(mapKey) || await getGHLChannelAccount(locationId);
+    let channelAccount = commandedChannel || _lastChannelMap.get(mapKey) || await getGHLChannelAccount(locationId);
     if (!channelAccount) {
       console.error(`❌ No hay canal WhatsApp configurado para GHL location ${locationId}`);
       return;
+    }
+
+    // Actualizar mapa de routing si se usó un comando explícito
+    if (commandedChannel) {
+      _lastChannelMap.set(mapKey, commandedChannel);
     }
 
     // Construir WhatsAppService con credenciales del canal
@@ -985,7 +1010,7 @@ export const handleGHLWebhook = async (req, res) => {
       console.log(`👥 Destino detectado como grupo: ${formattedPhone}`);
     }
 
-    await whatsapp.sendTextMessage(formattedPhone, message);
+    await whatsapp.sendTextMessage(formattedPhone, finalMessage);
 
     console.log(`✅ Mensaje GHL enviado via WhatsApp a ${formattedPhone}`);
 
@@ -994,12 +1019,37 @@ export const handleGHLWebhook = async (req, res) => {
       direction:        'outgoing',
       customerPhone:    phone,
       businessPhone:    channelAccount.whatsapp_phone_number,
-      messageText:      message,
+      messageText:      finalMessage,
       status:           'success',
       eventType:        'MESSAGE_SENT',
       provider:         channelAccount.provider || 'evolution',
     });
   } catch (error) {
     console.error('❌ Error en GHL webhook saliente:', error.response?.data || error.message);
+  }
+};
+
+// PUT /api/ghl-channels/:id — actualizar nombre o marcar como predeterminado
+export const updateGHLChannel = async (req, res) => {
+  const { id } = req.params;
+  const { displayName, isDefault } = req.body;
+  try {
+    const channel = await getGHLChannelAccountById(id);
+    if (!channel) return res.status(404).json({ error: 'Canal no encontrado' });
+
+    if (isDefault === true) {
+      // Marcar como predeterminado (quita el default de los demás del location)
+      const updated = await setGHLChannelAsDefault(channel.location_id, id);
+      return res.json({ success: true, channel: updated });
+    }
+
+    if (displayName !== undefined) {
+      const updated = await updateGHLChannelAccount(id, { displayName });
+      return res.json({ success: true, channel: updated });
+    }
+
+    res.status(400).json({ error: 'Nada que actualizar — envía displayName o isDefault' });
+  } catch (error) {
+    res.status(500).json({ error: 'Error actualizando canal GHL', details: error.message });
   }
 };
