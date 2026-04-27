@@ -15,6 +15,7 @@ import {
 import {
   getGHLChannelAccount,
   getGHLChannelAccountByInstance,
+  getAllGHLChannelAccounts,
 } from '../../db/ghlChannelRepository.js';
 import { updateServiceWindow } from '../../db/serviceWindowRepository.js';
 import { insertLog } from '../../db/logRepository.js';
@@ -23,6 +24,13 @@ dotenv.config();
 
 // Caché en memoria de nombres de grupo (evita llamar getGroupInfo en cada mensaje)
 const _groupNameCache = new Map();
+
+// Deduplicación de mensajes en locations con múltiples números
+const _processedMsgIds = new Map(); // "locationId:messageId" → timestamp
+let _dedupCleanupCounter = 0;
+
+// Cache: "locationId:customerPhone" → channelAccount object
+export const _lastChannelMap = new Map();
 
 async function resolveGroupName(whatsapp, groupJid, groupNumber) {
   if (_groupNameCache.has(groupJid)) return _groupNameCache.get(groupJid);
@@ -141,6 +149,14 @@ async function flushToGHL(messages, channelAccount, locationId) {
   const contactId   = await findOrCreateGHLContact(accessToken, locationId, merged.phoneNumber, merged.contactName);
   console.log(`👤 ContactId GHL: ${contactId}`);
 
+  // Source footer cuando hay múltiples números en el mismo location
+  try {
+    const allChannels = await getAllGHLChannelAccounts(locationId);
+    if (allChannels.length > 1 && channelAccount.whatsapp_phone_number) {
+      merged.text = `${merged.text}\n\nSource: +${channelAccount.whatsapp_phone_number}`;
+    }
+  } catch {}
+
   await publishInboundMessageToGHL(accessToken, locationId, contactId, {
     text:        merged.text,
     mediaUrl:    merged.mediaUrl || null,
@@ -158,6 +174,8 @@ async function flushToGHL(messages, channelAccount, locationId) {
     eventType:        messages.length > 1 ? 'MESSAGE_BATCH_RECEIVED' : 'MESSAGE_RECEIVED',
     provider:         channelAccount.provider || 'evolution',
   }).catch(err => console.error('[Log GHL]', err.message));
+
+  _lastChannelMap.set(`${locationId}:${merged.phoneNumber}`, channelAccount);
 
   console.log(`✅ Publicado en GHL Inbox: location ${locationId} (${messages.length} msgs agrupados)`);
 }
@@ -210,6 +228,23 @@ export const receiveMessage = async (req, res) => {
     const whatsapp    = buildWhatsAppService(channelAccount);
     const messageData = whatsapp.processIncomingMessage(req.body);
     if (!messageData) return;
+
+    // Deduplicación: evitar doble publicación cuando múltiples números están en el mismo grupo
+    if (isGHL && messageData.messageId) {
+      const dedupKey = `${tenantId}:${messageData.messageId}`;
+      if (_processedMsgIds.has(dedupKey)) {
+        console.log(`⚡ Mensaje duplicado ignorado (multi-número): ${messageData.messageId}`);
+        return;
+      }
+      _processedMsgIds.set(dedupKey, Date.now());
+      // Cleanup lazy: cada 200 mensajes, eliminar entradas > 5 min
+      if (++_dedupCleanupCounter % 200 === 0) {
+        const cutoff = Date.now() - 5 * 60 * 1000;
+        for (const [k, ts] of _processedMsgIds) {
+          if (ts < cutoff) _processedMsgIds.delete(k);
+        }
+      }
+    }
 
     // Mensajes enviados por nosotros (fromMe): solo interesan a GHL para historial
     if (messageData.isFromMe && !isGHL) return;

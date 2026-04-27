@@ -8,8 +8,10 @@ import {
   getGHLChannelAccount,
   getAllGHLChannelAccounts,
   getGHLChannelAccountById,
+  getGHLChannelAccountByInstance,
   deleteGHLChannelAccountById,
 } from '../../db/ghlChannelRepository.js';
+import { _lastChannelMap } from './whatsapp.controller.js';
 import { insertLog } from '../../db/logRepository.js';
 import pool from '../../config/database.js';
 
@@ -359,6 +361,14 @@ export const setupGHLChannel = async (req, res) => {
       }
 
       if (instanceExists) {
+        // Verificar que la instancia no pertenezca a otro location
+        const existingOwner = await getGHLChannelAccountByInstance(instanceName);
+        if (existingOwner && existingOwner.location_id !== locationId) {
+          return res.status(400).json({
+            error: `La instancia "${instanceName}" ya está en uso por otra subcuenta. Usa un nombre diferente.`,
+          });
+        }
+
         // INSTANCIA EXISTE: actualizar webhook + obtener QR si no está conectado
         console.log(`ℹ️ Instancia ${instanceName} ya existe, actualizando webhook...`);
         try {
@@ -948,7 +958,9 @@ export const handleGHLWebhook = async (req, res) => {
     }
 
     // Buscar canal WhatsApp configurado para este location
-    const channelAccount = await getGHLChannelAccount(locationId);
+    // Preferir el canal que recibió el último mensaje del cliente (routing multi-número)
+    const mapKey = `${locationId}:${phone}`;
+    let channelAccount = _lastChannelMap.get(mapKey) || await getGHLChannelAccount(locationId);
     if (!channelAccount) {
       console.error(`❌ No hay canal WhatsApp configurado para GHL location ${locationId}`);
       return;
