@@ -170,7 +170,7 @@ export const oauthCallback = async (req, res) => {
       // Instalación a nivel Location — guardar directamente
       await saveGHLTokens(locationId, access_token, refresh_token, expires_in || 86400);
       console.log(`✅ GHL OAuth completado para location ${locationId}`);
-      return res.redirect(`${GHL_SETUP_BASE}/ghl-setup?locationId=${locationId}`);
+      return res.redirect(`${GHL_SETUP_BASE}/ghl-admin?locationId=${locationId}`);
     }
 
     if (companyId) {
@@ -178,7 +178,7 @@ export const oauthCallback = async (req, res) => {
       const companyKey = `company_${companyId}`;
       await saveGHLTokens(companyKey, access_token, refresh_token, expires_in || 86400);
       console.log(`✅ GHL OAuth completado para company ${companyId} (bulk/agency install)`);
-      return res.redirect(`${GHL_SETUP_BASE}/ghl-setup?companyId=${companyId}`);
+      return res.redirect(`${GHL_SETUP_BASE}/ghl-admin?companyId=${companyId}`);
     }
 
     console.error('❌ GHL OAuth: no se recibió locationId ni companyId', tokenRes.data);
