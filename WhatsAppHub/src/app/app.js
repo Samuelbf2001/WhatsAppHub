@@ -28,6 +28,13 @@ app.get('/ghl-setup', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'ghl-setup.html'));
 });
 
+// GHL Admin — redirige al frontend React (app embebida en GHL)
+app.get('/ghl-admin', (req, res) => {
+  const frontendBase = process.env.FRONTEND_BASE_URL || 'https://whatsfull-ui.lbnkcu.easypanel.host';
+  const qs = new URLSearchParams(req.query).toString();
+  res.redirect(`${frontendBase}/ghl-admin${qs ? `?${qs}` : ''}`);
+});
+
 app.use('/', mainRouter);
 
 app.use((err, req, res, next) => {
