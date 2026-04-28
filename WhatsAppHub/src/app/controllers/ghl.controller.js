@@ -62,7 +62,11 @@ async function getLocationTokenFromCompany(companyId, locationId) {
       }
     );
   } catch (axiosErr) {
-    const ghlMsg = axiosErr.response?.data?.message || axiosErr.message;
+    const status = axiosErr.response?.status;
+    const ghlMsg = axiosErr.response?.data?.message || axiosErr.response?.data?.error || axiosErr.message;
+    if (status === 400 || status === 401 || status === 403) {
+      throw new Error(`La subcuenta no tiene la app instalada o el token no tiene permisos. Distribuye la app a esta subcuenta desde el Marketplace GHL. (GHL: ${ghlMsg})`);
+    }
     throw new Error(`No se pudo generar location token desde company: ${ghlMsg}`);
   }
 
@@ -104,12 +108,24 @@ export async function getValidGHLToken(locationId, companyId = null) {
   const now = Date.now();
 
   if (expiresAt - now < 5 * 60 * 1000) {
-    console.log(`🔄 Refrescando token GHL para location ${locationId}`);
-    const refreshed = await refreshGHLToken(tokens.refresh_token);
-    await updateGHLAccessToken(locationId, refreshed.accessToken, refreshed.expiresIn);
-    const newExpiresAt = Date.now() + (refreshed.expiresIn || 86400) * 1000;
-    _tokenCache.set(locationId, { token: refreshed.accessToken, expiresAt: newExpiresAt });
-    return refreshed.accessToken;
+    try {
+      console.log(`🔄 Refrescando token GHL para location ${locationId}`);
+      const refreshed = await refreshGHLToken(tokens.refresh_token);
+      await updateGHLAccessToken(locationId, refreshed.accessToken, refreshed.expiresIn);
+      const newExpiresAt = Date.now() + (refreshed.expiresIn || 86400) * 1000;
+      _tokenCache.set(locationId, { token: refreshed.accessToken, expiresAt: newExpiresAt });
+      return refreshed.accessToken;
+    } catch (refreshErr) {
+      console.warn(`⚠️ No se pudo refrescar location token: ${refreshErr.message}`);
+      // Fallback: generar nuevo location token desde company token si disponible
+      if (companyId) {
+        console.log(`🔄 Fallback: generando location token desde company ${companyId}`);
+        const token = await getLocationTokenFromCompany(companyId, locationId);
+        _tokenCache.set(locationId, { token, expiresAt: Date.now() + 86400 * 1000 });
+        return token;
+      }
+      throw new Error(`Token GHL expirado y no se pudo refrescar para location ${locationId}: ${refreshErr.message}`);
+    }
   }
 
   _tokenCache.set(locationId, { token: tokens.access_token, expiresAt });
