@@ -236,6 +236,8 @@ export const receiveMessage = async (req, res) => {
         const mediaResult = await whatsapp.downloadMedia(messageData._rawData);
         if (mediaResult?.base64) {
           messageData.mediaUrl = saveMedia(mediaResult.base64, mediaResult.mimetype, messageData.messageId);
+          // Con adjunto real, el texto es solo el caption (o vacío para audio/stickers)
+          messageData.text = messageData.caption || '';
           console.log(`📎 Media guardada: ${messageData.mediaUrl} (${messageData.mediaType})`);
         }
       } catch (err) {

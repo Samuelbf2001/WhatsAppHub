@@ -199,6 +199,7 @@ export default class EvolutionAPIProvider extends WhatsAppProvider {
       // --- Extraer texto según tipo de mensaje ---
       let text = null;
       let mediaType = null;
+      let caption = null;   // caption o filename — se usa como texto cuando hay adjunto real
 
       if (messageType === 'conversation' || messageType === 'extendedTextMessage') {
         text =
@@ -207,26 +208,28 @@ export default class EvolutionAPIProvider extends WhatsAppProvider {
           null;
 
       } else if (messageType === 'imageMessage') {
-        const caption = data.message?.imageMessage?.caption;
-        text = caption ? `📷 Imagen: ${caption}` : '📷 [Imagen recibida]';
+        caption = data.message?.imageMessage?.caption || null;
+        text = caption ? `📷 ${caption}` : '📷 [Imagen]';
         mediaType = 'image';
 
       } else if (messageType === 'videoMessage') {
-        const caption = data.message?.videoMessage?.caption;
-        text = caption ? `🎥 Video: ${caption}` : '🎥 [Video recibido]';
+        caption = data.message?.videoMessage?.caption || null;
+        text = caption ? `🎥 ${caption}` : '🎥 [Video]';
         mediaType = 'video';
 
       } else if (messageType === 'audioMessage' || messageType === 'pttMessage') {
-        text = '🎵 [Nota de voz recibida]';
+        caption = null;
+        text = '🎵 [Nota de voz]';
         mediaType = 'audio';
 
       } else if (messageType === 'documentMessage') {
-        const title = data.message?.documentMessage?.title || 'archivo';
-        text = `📄 [Documento: ${title}]`;
+        caption = data.message?.documentMessage?.title || data.message?.documentMessage?.fileName || null;
+        text = caption ? `📄 ${caption}` : '📄 [Documento]';
         mediaType = 'document';
 
       } else if (messageType === 'stickerMessage') {
-        text = '🎭 [Sticker recibido]';
+        caption = null;
+        text = '🎭 [Sticker]';
         mediaType = 'sticker';
 
       } else if (messageType === 'locationMessage') {
@@ -251,6 +254,7 @@ export default class EvolutionAPIProvider extends WhatsAppProvider {
         businessPhone: rawBusiness ? `+${rawBusiness}` : null, // número del negocio
         contactName:  data.pushName || null,
         text,
+        caption,                            // caption limpio (sin emoji), o null
         mediaType,                          // null = texto, "image"|"video"|etc. = media
         mediaUrl:     null,                 // se llena después de descargar el archivo
         timestamp:    (data.messageTimestamp || 0) * 1000,  // Evolution sends Unix seconds → convert to ms
