@@ -163,6 +163,41 @@ export async function runMigrations() {
         WHERE display_name IS NULL;
     `).catch(() => {});
 
+    // Configuración de alertas de desconexión por instancia
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS alert_configs (
+        id SERIAL PRIMARY KEY,
+        instance_name VARCHAR(100) NOT NULL UNIQUE,
+        location_id VARCHAR(100),
+        alert_enabled BOOLEAN DEFAULT TRUE,
+        notify_on_disconnect BOOLEAN DEFAULT TRUE,
+        notify_on_reconnect BOOLEAN DEFAULT FALSE,
+        webhook_url TEXT,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      );
+    `);
+
+    // Historial de eventos de desconexión/reconexión
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS disconnect_events (
+        id SERIAL PRIMARY KEY,
+        instance_name VARCHAR(100) NOT NULL,
+        location_id VARCHAR(100),
+        event_type VARCHAR(30) NOT NULL,
+        previous_state VARCHAR(30),
+        new_state VARCHAR(30) NOT NULL,
+        alert_sent BOOLEAN DEFAULT FALSE,
+        alert_webhook_status INT,
+        created_at TIMESTAMP DEFAULT NOW()
+      );
+    `);
+
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_disconnect_events_instance
+        ON disconnect_events(instance_name, created_at DESC);
+    `);
+
     console.log('✅ Migraciones ejecutadas correctamente');
   } catch (err) {
     console.error('❌ Error en migraciones:', err);

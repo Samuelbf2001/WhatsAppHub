@@ -20,6 +20,7 @@ import {
 } from '../../db/ghlChannelRepository.js';
 import { updateServiceWindow } from '../../db/serviceWindowRepository.js';
 import { insertLog } from '../../db/logRepository.js';
+import { handleConnectionUpdate } from '../services/alertService.js';
 
 dotenv.config();
 
@@ -196,6 +197,18 @@ export const verifyWebhook = (req, res) => {
 // POST /whatsapp-webhook — recibe mensajes entrantes de WhatsApp (HubSpot o GHL)
 export const receiveMessage = async (req, res) => {
   res.sendStatus(200);
+
+  // Interceptar eventos de sistema de EvolutionAPI (no son mensajes)
+  if (req.body.event === 'CONNECTION_UPDATE') {
+    const instanceName = req.body.instance;
+    const newState     = req.body.data?.state;
+    if (instanceName && newState) {
+      const lId = req.query.locationId || null;
+      handleConnectionUpdate(instanceName, lId, newState)
+        .catch(err => console.error('[CONNECTION_UPDATE]', err.message));
+    }
+    return;
+  }
 
   // Detectar si el webhook viene de un canal GHL o HubSpot
   const locationId = req.query.locationId || null;

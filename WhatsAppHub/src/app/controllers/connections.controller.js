@@ -1,5 +1,11 @@
 import dotenv from 'dotenv';
 import { getAllChannelAccounts } from '../../db/channelRepository.js';
+import {
+  getAlertConfig,
+  upsertAlertConfig,
+  getDisconnectEvents,
+} from '../../db/alertConfigRepository.js';
+import { sendTestAlert } from '../services/alertService.js';
 
 dotenv.config();
 
@@ -101,4 +107,62 @@ export const getConnectionStatus = async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: 'Error consultando estado', details: error.message });
   }
+};
+
+// GET /api/alert-configs/:instanceName
+export const getAlertConfigHandler = async (req, res) => {
+  const { instanceName } = req.params;
+  try {
+    const config = await getAlertConfig(instanceName);
+    res.json({
+      success: true,
+      config: config || {
+        instance_name:        instanceName,
+        alert_enabled:        true,
+        notify_on_disconnect: true,
+        notify_on_reconnect:  false,
+        webhook_url:          null,
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Error leyendo configuración de alertas', details: err.message });
+  }
+};
+
+// POST /api/alert-configs/:instanceName
+export const upsertAlertConfigHandler = async (req, res) => {
+  const { instanceName } = req.params;
+  const { locationId, alertEnabled, notifyOnDisconnect, notifyOnReconnect, webhookUrl } = req.body;
+  try {
+    const config = await upsertAlertConfig(instanceName, locationId, {
+      alertEnabled,
+      notifyOnDisconnect,
+      notifyOnReconnect,
+      webhookUrl,
+    });
+    res.json({ success: true, config });
+  } catch (err) {
+    res.status(500).json({ error: 'Error guardando configuración de alertas', details: err.message });
+  }
+};
+
+// GET /api/alert-configs/:instanceName/events
+export const getDisconnectEventsHandler = async (req, res) => {
+  const { instanceName } = req.params;
+  const limit = Math.min(parseInt(req.query.limit) || 20, 100);
+  try {
+    const events = await getDisconnectEvents(instanceName, limit);
+    res.json({ success: true, events });
+  } catch (err) {
+    res.status(500).json({ error: 'Error leyendo historial de eventos', details: err.message });
+  }
+};
+
+// POST /api/alert-configs/:instanceName/test
+export const testAlertHandler = async (req, res) => {
+  const { instanceName } = req.params;
+  const { webhookUrl } = req.body;
+  if (!webhookUrl) return res.status(400).json({ error: 'webhookUrl requerido' });
+  const result = await sendTestAlert(instanceName, webhookUrl);
+  res.json(result);
 };
