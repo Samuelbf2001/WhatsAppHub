@@ -239,6 +239,9 @@ export default class EvolutionAPIProvider extends WhatsAppProvider {
           : '📍 [Ubicación recibida]';
         mediaType = 'location';
 
+      } else if (messageType === 'reactionMessage' || messageType === 'protocolMessage' || messageType === 'senderKeyDistributionMessage') {
+        // Reacciones y mensajes internos de WhatsApp — ignorar silenciosamente
+        return null;
       } else {
         // Tipo no reconocido
         text = `📎 [Mensaje no compatible: ${messageType}]`;
