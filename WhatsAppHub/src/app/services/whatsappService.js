@@ -56,4 +56,9 @@ export default class WhatsAppService {
   async getGroupInfo(groupJid) {
     return this.provider.getGroupInfo(groupJid);
   }
+
+  async downloadMedia(rawData) {
+    if (typeof this.provider.downloadMedia !== 'function') return null;
+    return this.provider.downloadMedia(rawData);
+  }
 }

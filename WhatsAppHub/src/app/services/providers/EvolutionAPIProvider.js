@@ -112,6 +112,27 @@ export default class EvolutionAPIProvider extends WhatsAppProvider {
   }
 
   /**
+   * Descarga un mensaje de media desde EvolutionAPI y retorna base64 + mimetype.
+   * @param {object} rawData - El objeto `data` del webhook (key, message, messageType, etc.)
+   * @returns {Promise<{ base64: string, mimetype: string } | null>}
+   */
+  async downloadMedia(rawData) {
+    if (!rawData) return null;
+    try {
+      const { data } = await axios.post(
+        `${this.baseUrl}/chat/getBase64FromMediaMessage/${this.instance}`,
+        { message: rawData, convertToMp4: false },
+        { headers: this.headers, timeout: 30000 }
+      );
+      if (data?.base64) return { base64: data.base64, mimetype: data.mimetype || 'application/octet-stream' };
+      return null;
+    } catch (err) {
+      console.warn(`[EvolutionAPI] downloadMedia failed: ${err.message}`);
+      return null;
+    }
+  }
+
+  /**
    * Configurar el webhook de esta instancia.
    */
   async setWebhook(webhookUrl) {
@@ -231,12 +252,14 @@ export default class EvolutionAPIProvider extends WhatsAppProvider {
         contactName:  data.pushName || null,
         text,
         mediaType,                          // null = texto, "image"|"video"|etc. = media
+        mediaUrl:     null,                 // se llena después de descargar el archivo
         timestamp:    (data.messageTimestamp || 0) * 1000,  // Evolution sends Unix seconds → convert to ms
         type:         mediaType ? 'media' : 'text',
         isFromMe,
         isGroup,
         groupJid:     isGroup ? remoteJid : null,
         participant:  isGroup ? (rawParticipant ? `+${rawParticipant}` : null) : null,
+        _rawData:     mediaType && mediaType !== 'location' ? data : null,
       };
     } catch {
       return null;

@@ -5,6 +5,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import mainRouter from './routes/index.js';
 import { runMigrations } from '../db/migrations.js';
+import { getMediaDir, cleanupOldMedia } from './services/mediaStorage.js';
 
 dotenv.config();
 
@@ -17,6 +18,12 @@ app.use(express.urlencoded({ extended: true }));
 
 // Servir archivos estáticos (setup UI)
 app.use(express.static(path.join(__dirname, 'public')));
+
+// Servir archivos de media temporales (imágenes, audio, video descargados de WhatsApp)
+app.use('/media', express.static(getMediaDir()));
+
+// Limpiar media antigua cada 6 horas
+setInterval(cleanupOldMedia, 6 * 60 * 60 * 1000);
 
 // Setup flow de canal — HubSpot redirige aquí desde Settings > Inbox > Connect Channel
 app.get('/channel-setup', (req, res) => {

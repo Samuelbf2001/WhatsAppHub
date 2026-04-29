@@ -3,6 +3,7 @@ import WhatsAppService from '../services/whatsappService.js';
 import HubSpotService from '../services/hubspotService.js';
 import CustomChannelsService from '../services/customChannelsService.js';
 import { addToBuffer, mergeMessages } from '../services/messageBuffer.js';
+import { saveMedia } from '../services/mediaStorage.js';
 import { getValidAccessToken } from './hubspot.controller.js';
 import { getValidGHLToken } from './ghl.controller.js';
 import { findOrCreateGHLContact, publishInboundMessageToGHL } from '../services/ghlService.js';
@@ -228,6 +229,20 @@ export const receiveMessage = async (req, res) => {
     const whatsapp    = buildWhatsAppService(channelAccount);
     const messageData = whatsapp.processIncomingMessage(req.body);
     if (!messageData) return;
+
+    // Descargar media (imagen, video, audio) y guardar en disco para GHL
+    if (messageData._rawData) {
+      try {
+        const mediaResult = await whatsapp.downloadMedia(messageData._rawData);
+        if (mediaResult?.base64) {
+          messageData.mediaUrl = saveMedia(mediaResult.base64, mediaResult.mimetype, messageData.messageId);
+          console.log(`📎 Media guardada: ${messageData.mediaUrl} (${messageData.mediaType})`);
+        }
+      } catch (err) {
+        console.warn(`⚠️ No se pudo descargar media (${messageData.mediaType}): ${err.message}`);
+      }
+      delete messageData._rawData;
+    }
 
     // Deduplicación: evitar doble publicación cuando múltiples números están en el mismo grupo
     if (isGHL && messageData.messageId) {
