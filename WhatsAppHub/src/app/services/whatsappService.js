@@ -57,6 +57,14 @@ export default class WhatsAppService {
     return this.provider.getGroupInfo(groupJid);
   }
 
+  async sendMedia(to, mediaData) {
+    if (typeof this.provider.sendMedia !== 'function') {
+      console.warn('[WhatsAppService] sendMedia no implementado en este provider, enviando como texto');
+      return this.provider.sendTextMessage(to, mediaData.caption || mediaData.url || '');
+    }
+    return this.provider.sendMedia(to, mediaData);
+  }
+
   async downloadMedia(rawData) {
     if (typeof this.provider.downloadMedia !== 'function') return null;
     return this.provider.downloadMedia(rawData);

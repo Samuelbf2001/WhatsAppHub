@@ -72,6 +72,24 @@ export default class GupshupProvider extends WhatsAppProvider {
     return { messageId: data.messages?.[0]?.id };
   }
 
+  async sendMedia(to, { mediatype, mimetype, url, caption, fileName }) {
+    const typeMap = { image: 'image', video: 'video', audio: 'audio', document: 'document' };
+    const msgType = typeMap[mediatype] || 'document';
+
+    let mediaPayload;
+    if (msgType === 'image')    mediaPayload = { image:    { link: url, ...(caption && { caption }) } };
+    else if (msgType === 'video')   mediaPayload = { video:    { link: url, ...(caption && { caption }) } };
+    else if (msgType === 'audio')   mediaPayload = { audio:    { link: url } };
+    else                            mediaPayload = { document: { link: url, filename: fileName || 'archivo' } };
+
+    const { data } = await axios.post(
+      `${this.partnerBase}/app/${this.appId}/v3/message`,
+      { messaging_product: 'whatsapp', recipient_type: 'individual', to, type: msgType, ...mediaPayload },
+      { headers: this.getHeaders() }
+    );
+    return { messageId: data.messages?.[0]?.id };
+  }
+
   async markMessageAsRead(messageId) {
     // Gupshup Partner API no expone endpoint de read receipts
     console.log(`[Gupshup] markAsRead: ${messageId} (no soportado vía API)`);

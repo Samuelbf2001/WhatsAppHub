@@ -908,6 +908,30 @@ export const testGHLInbound = async (req, res) => {
   return res.json({ locationId, phone, steps, success: true });
 };
 
+/**
+ * Detecta el tipo de media (mediatype, mimetype, fileName) a partir de una URL.
+ * Se usa para decidir cómo enviar el adjunto por WhatsApp.
+ */
+function detectMediaInfo(url) {
+  const clean = (url || '').split('?')[0].toLowerCase();
+  const fileName = clean.split('/').pop() || 'archivo';
+
+  if (/\.(jpg|jpeg|png|gif|webp|bmp|svg)$/.test(clean))
+    return { mediatype: 'image',    mimetype: 'image/jpeg',                fileName };
+  if (/\.(mp4|mov|avi|mkv|webm|3gp)$/.test(clean))
+    return { mediatype: 'video',    mimetype: 'video/mp4',                 fileName };
+  if (/\.(mp3|ogg|aac|m4a|wav|opus|amr)$/.test(clean))
+    return { mediatype: 'audio',    mimetype: 'audio/mpeg',                fileName };
+  if (/\.pdf$/.test(clean))
+    return { mediatype: 'document', mimetype: 'application/pdf',           fileName };
+  if (/\.(docx?)$/.test(clean))
+    return { mediatype: 'document', mimetype: 'application/msword',        fileName };
+  if (/\.(xlsx?)$/.test(clean))
+    return { mediatype: 'document', mimetype: 'application/vnd.ms-excel',  fileName };
+
+  return { mediatype: 'document', mimetype: 'application/octet-stream', fileName };
+}
+
 // Deduplicación de webhooks GHL — GHL puede enviar el mismo OutboundMessage dos veces
 const _processedGHLEvents = new Map(); // key → timestamp
 const GHL_DEDUP_TTL_MS = 30_000;
@@ -1062,9 +1086,29 @@ export const handleGHLWebhook = async (req, res) => {
       console.log(`👥 Destino detectado como grupo: ${formattedPhone}`);
     }
 
-    await whatsapp.sendTextMessage(formattedPhone, finalMessage);
+    // Adjuntos: GHL usa 'attachments' (OutboundMessage) o 'files' (Delivery URL)
+    const attachments = [
+      ...(Array.isArray(body.attachments) ? body.attachments : []),
+      ...(Array.isArray(body.files)       ? body.files       : []),
+    ].filter(Boolean);
 
-    console.log(`✅ Mensaje GHL enviado via WhatsApp a ${formattedPhone}`);
+    if (attachments.length > 0) {
+      // Enviar cada adjunto; el texto va como caption del primer adjunto
+      for (let i = 0; i < attachments.length; i++) {
+        const url     = attachments[i];
+        const caption = (i === 0 && finalMessage) ? finalMessage : undefined;
+        const { mediatype, mimetype, fileName } = detectMediaInfo(url);
+        console.log(`📎 Enviando adjunto [${i + 1}/${attachments.length}] tipo=${mediatype} url=${url}`);
+        await whatsapp.sendMedia(formattedPhone, { mediatype, mimetype, url, caption, fileName });
+      }
+      // Si había texto Y adjuntos, el texto ya fue como caption del primero; no re-enviar.
+      // Si solo había adjuntos sin texto, ya se enviaron todos.
+    } else {
+      // Sin adjuntos → enviar como texto puro
+      await whatsapp.sendTextMessage(formattedPhone, finalMessage);
+    }
+
+    console.log(`✅ Mensaje GHL enviado via WhatsApp a ${formattedPhone} (adjuntos: ${attachments.length})`);
 
     await insertLog(locationId, {
       channelAccountId: channelAccount.id,
@@ -1073,7 +1117,7 @@ export const handleGHLWebhook = async (req, res) => {
       businessPhone:    channelAccount.whatsapp_phone_number,
       messageText:      finalMessage,
       status:           'success',
-      eventType:        'MESSAGE_SENT',
+      eventType:        attachments.length > 0 ? 'MEDIA_SENT' : 'MESSAGE_SENT',
       provider:         channelAccount.provider || 'evolution',
     });
   } catch (error) {

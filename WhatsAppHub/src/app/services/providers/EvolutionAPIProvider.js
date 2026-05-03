@@ -56,7 +56,7 @@ export default class EvolutionAPIProvider extends WhatsAppProvider {
   }
 
   async sendMedia(to, { mediatype, mimetype, url, caption, fileName }) {
-    const number = to.replace(/^\+/, '');
+    const number = to.includes('@') ? to : to.replace(/^\+/, '');
     const { data } = await axios.post(
       `${this.baseUrl}/message/sendMedia/${this.instance}`,
       { number, mediatype, mimetype, media: url, caption, fileName, delay: 0 },
