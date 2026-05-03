@@ -198,6 +198,42 @@ export async function runMigrations() {
         ON disconnect_events(instance_name, created_at DESC);
     `);
 
+    // Routing persistente contacto→canal por location (sobrevive reinicios del servidor)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS ghl_contact_channel_routing (
+        id SERIAL PRIMARY KEY,
+        location_id VARCHAR(100) NOT NULL,
+        customer_phone VARCHAR(30) NOT NULL,
+        channel_account_id INTEGER NOT NULL,
+        last_used_at TIMESTAMP DEFAULT NOW(),
+        UNIQUE(location_id, customer_phone)
+      );
+    `);
+
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_contact_routing_location
+        ON ghl_contact_channel_routing(location_id, customer_phone);
+    `);
+
+    // Tokens para links de conexión fácil (compartible por WhatsApp/email)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS ghl_connection_tokens (
+        token VARCHAR(64) PRIMARY KEY,
+        location_id VARCHAR(100) NOT NULL,
+        company_id VARCHAR(100),
+        display_name VARCHAR(255),
+        created_by VARCHAR(100),
+        expires_at TIMESTAMP,
+        used_count INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT NOW()
+      );
+    `);
+
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_connection_tokens_location
+        ON ghl_connection_tokens(location_id);
+    `);
+
     console.log('✅ Migraciones ejecutadas correctamente');
   } catch (err) {
     console.error('❌ Error en migraciones:', err);

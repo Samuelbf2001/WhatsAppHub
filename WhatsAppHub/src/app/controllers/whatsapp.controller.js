@@ -17,6 +17,7 @@ import {
   getGHLChannelAccount,
   getGHLChannelAccountByInstance,
   getAllGHLChannelAccounts,
+  saveContactChannelRouting,
 } from '../../db/ghlChannelRepository.js';
 import { updateServiceWindow } from '../../db/serviceWindowRepository.js';
 import { insertLog } from '../../db/logRepository.js';
@@ -178,6 +179,9 @@ async function flushToGHL(messages, channelAccount, locationId) {
   }).catch(err => console.error('[Log GHL]', err.message));
 
   _lastChannelMap.set(`${locationId}:${merged.phoneNumber}`, channelAccount);
+  // Persistir routing en DB para que sobreviva reinicios del servidor
+  saveContactChannelRouting(locationId, merged.phoneNumber, channelAccount.id)
+    .catch(err => console.error('[routing persist]', err.message));
 
   console.log(`✅ Publicado en GHL Inbox: location ${locationId} (${messages.length} msgs agrupados)`);
 }

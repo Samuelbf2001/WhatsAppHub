@@ -123,3 +123,94 @@ export async function deleteGHLChannelAccountById(id) {
   );
   return rows[0] || null;
 }
+
+// ---------------------------------------------------------------------------
+// Routing persistente: contacto → canal (sobrevive reinicios del servidor)
+// ---------------------------------------------------------------------------
+
+/**
+ * Guarda o actualiza qué canal WhatsApp debe manejar a este contacto en el location.
+ * Se llama cada vez que llega un mensaje entrante al canal correcto.
+ */
+export async function saveContactChannelRouting(locationId, customerPhone, channelAccountId) {
+  await pool.query(
+    `INSERT INTO ghl_contact_channel_routing (location_id, customer_phone, channel_account_id, last_used_at)
+     VALUES ($1, $2, $3, NOW())
+     ON CONFLICT (location_id, customer_phone) DO UPDATE SET
+       channel_account_id = EXCLUDED.channel_account_id,
+       last_used_at = NOW()`,
+    [locationId, customerPhone, channelAccountId]
+  );
+}
+
+/**
+ * Devuelve el canal que atendió por última vez a este contacto en el location.
+ * Retorna el channelAccount completo o null si no hay historial.
+ */
+export async function getContactChannelRouting(locationId, customerPhone) {
+  const { rows } = await pool.query(
+    `SELECT ca.*
+     FROM ghl_contact_channel_routing r
+     JOIN ghl_channel_accounts ca ON ca.id = r.channel_account_id
+     WHERE r.location_id = $1 AND r.customer_phone = $2
+       AND ca.authorized = TRUE`,
+    [locationId, customerPhone]
+  );
+  return rows[0] || null;
+}
+
+// ---------------------------------------------------------------------------
+// Connection tokens: links de conexión fácil por subcuenta
+// ---------------------------------------------------------------------------
+
+/**
+ * Guarda un token de conexión nuevo.
+ */
+export async function saveConnectionToken(token, locationId, { companyId, displayName, createdBy, expiresAt } = {}) {
+  await pool.query(
+    `INSERT INTO ghl_connection_tokens (token, location_id, company_id, display_name, created_by, expires_at)
+     VALUES ($1, $2, $3, $4, $5, $6)`,
+    [token, locationId, companyId || null, displayName || null, createdBy || null, expiresAt || null]
+  );
+}
+
+/**
+ * Busca y valida un token. Incrementa el contador de uso.
+ * Retorna null si el token no existe o expiró.
+ */
+export async function getConnectionToken(token) {
+  const { rows } = await pool.query(
+    `SELECT * FROM ghl_connection_tokens
+     WHERE token = $1 AND (expires_at IS NULL OR expires_at > NOW())`,
+    [token]
+  );
+  if (!rows[0]) return null;
+  // Incrementar uso de forma no bloqueante
+  pool.query('UPDATE ghl_connection_tokens SET used_count = used_count + 1 WHERE token = $1', [token]).catch(() => {});
+  return rows[0];
+}
+
+/**
+ * Lista todos los tokens activos de un location.
+ */
+export async function listConnectionTokens(locationId) {
+  const { rows } = await pool.query(
+    `SELECT token, display_name, created_by, expires_at, used_count, created_at
+     FROM ghl_connection_tokens
+     WHERE location_id = $1 AND (expires_at IS NULL OR expires_at > NOW())
+     ORDER BY created_at DESC`,
+    [locationId]
+  );
+  return rows;
+}
+
+/**
+ * Elimina un token por su valor.
+ */
+export async function deleteConnectionToken(token) {
+  const { rows } = await pool.query(
+    'DELETE FROM ghl_connection_tokens WHERE token = $1 RETURNING token',
+    [token]
+  );
+  return rows[0] || null;
+}

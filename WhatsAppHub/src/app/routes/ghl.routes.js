@@ -14,6 +14,10 @@ import {
   updateGHLChannel,
   debugGHL,
   testGHLInbound,
+  createConnectionLink,
+  resolveConnectionLink,
+  listConnectionLinks,
+  revokeConnectionLink,
 } from '../controllers/ghl.controller.js';
 
 const router = Router();
@@ -39,5 +43,11 @@ router.get('/api/ghl-company/locations',              listCompanyLocations);
 router.post('/api/ghl-location/generate-token',       generateLocationToken);
 router.get('/api/ghl-debug',                          debugGHL);
 router.get('/api/ghl-test-inbound',                   testGHLInbound);
+
+// Connection links — links de conexión fácil por subcuenta
+router.post('/api/ghl-channels/connection-link',          createConnectionLink);
+router.get('/api/ghl-channels/connection-links',          listConnectionLinks);
+router.get('/api/ghl-channels/connection-link/:token',    resolveConnectionLink);
+router.delete('/api/ghl-channels/connection-link/:token', revokeConnectionLink);
 
 export default router;

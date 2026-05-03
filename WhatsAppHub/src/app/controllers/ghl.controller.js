@@ -1,5 +1,6 @@
 import axios from 'axios';
 import dotenv from 'dotenv';
+import { randomBytes } from 'crypto';
 import WhatsAppService from '../services/whatsappService.js';
 import { findOrCreateGHLContact, publishInboundMessageToGHL, refreshGHLToken } from '../services/ghlService.js';
 import { saveGHLTokens, getGHLTokens, updateGHLAccessToken } from '../../db/ghlTokenRepository.js';
@@ -13,6 +14,11 @@ import {
   updateGHLChannelAccount,
   setGHLChannelAsDefault,
   getGHLChannelAccountByDisplayName,
+  getContactChannelRouting,
+  saveConnectionToken,
+  getConnectionToken,
+  listConnectionTokens,
+  deleteConnectionToken,
 } from '../../db/ghlChannelRepository.js';
 import { _lastChannelMap } from './whatsapp.controller.js';
 import { insertLog } from '../../db/logRepository.js';
@@ -993,10 +999,29 @@ export const handleGHLWebhook = async (req, res) => {
       }
     }
 
-    // Buscar canal WhatsApp configurado para este location
-    // Prioridad: comando explícito > último canal que recibió del cliente > predeterminado del location
+    // Buscar canal WhatsApp para este location.
+    // Prioridad: 1) comando explícito  2) caché en memoria  3) DB routing  4) default del location
     const mapKey = `${locationId}:${phone}`;
-    let channelAccount = commandedChannel || _lastChannelMap.get(mapKey) || await getGHLChannelAccount(locationId);
+    let channelAccount = commandedChannel;
+
+    if (!channelAccount) {
+      channelAccount = _lastChannelMap.get(mapKey) || null;
+    }
+
+    if (!channelAccount) {
+      // Consultar DB — sobrevive reinicios del servidor
+      const routed = await getContactChannelRouting(locationId, phone);
+      if (routed) {
+        channelAccount = routed;
+        _lastChannelMap.set(mapKey, routed); // calentar caché en memoria
+        console.log(`🗺️ Routing DB: ${phone} → canal ${routed.id} (${routed.whatsapp_phone_number})`);
+      }
+    }
+
+    if (!channelAccount) {
+      channelAccount = await getGHLChannelAccount(locationId);
+    }
+
     if (!channelAccount) {
       console.error(`❌ No hay canal WhatsApp configurado para GHL location ${locationId}`);
       return;
@@ -1067,5 +1092,113 @@ export const updateGHLChannel = async (req, res) => {
     res.status(400).json({ error: 'Nada que actualizar — envía displayName o isDefault' });
   } catch (error) {
     res.status(500).json({ error: 'Error actualizando canal GHL', details: error.message });
+  }
+};
+
+// ---------------------------------------------------------------------------
+// Connection Links — links de conexión fácil por subcuenta
+// ---------------------------------------------------------------------------
+
+/**
+ * POST /api/ghl-channels/connection-link
+ * Body: { locationId, companyId?, displayName?, expiresInDays?, createdBy? }
+ * Genera un token único compartible para que alguien conecte un número WhatsApp
+ * a este location sin necesidad de conocer el locationId.
+ */
+export const createConnectionLink = async (req, res) => {
+  let { locationId, companyId, displayName, expiresInDays, createdBy } = req.body;
+  if (!locationId) return res.status(400).json({ error: 'locationId es requerido' });
+
+  locationId = locationId.split('/')[0].trim();
+
+  try {
+    // Verificar que el location tiene tokens OAuth (está instalado)
+    const tokens = await getGHLTokens(locationId);
+    if (!tokens && !companyId) {
+      return res.status(400).json({ error: 'El location no tiene OAuth. Instala la app GHL primero.' });
+    }
+
+    const token = randomBytes(24).toString('hex'); // 48 chars hex
+    const expiresAt = expiresInDays
+      ? new Date(Date.now() + expiresInDays * 24 * 60 * 60 * 1000)
+      : null; // sin expiración por defecto
+
+    await saveConnectionToken(token, locationId, { companyId, displayName, createdBy, expiresAt });
+
+    const setupBase = process.env.GHL_SETUP_URL || process.env.WEBHOOK_BASE_URL || 'https://whatsfull.sixteam.pro';
+    const link = `${setupBase}/connect/${token}`;
+
+    console.log(`🔗 Connection link creado para location ${locationId}: ${link}`);
+    res.json({
+      success: true,
+      token,
+      link,
+      locationId,
+      displayName: displayName || null,
+      expiresAt: expiresAt || null,
+    });
+  } catch (error) {
+    console.error('❌ Error creando connection link:', error.message);
+    res.status(500).json({ error: 'Error creando link de conexión', details: error.message });
+  }
+};
+
+/**
+ * GET /api/ghl-channels/connection-link/:token
+ * Resuelve un token → devuelve locationId + metadata para que el frontend
+ * pre-llene el formulario de setup.
+ */
+export const resolveConnectionLink = async (req, res) => {
+  const { token } = req.params;
+  try {
+    const record = await getConnectionToken(token);
+    if (!record) {
+      return res.status(404).json({ error: 'Link inválido o expirado' });
+    }
+    res.json({
+      success: true,
+      locationId:  record.location_id,
+      companyId:   record.company_id  || null,
+      displayName: record.display_name || null,
+      usedCount:   record.used_count,
+      expiresAt:   record.expires_at  || null,
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Error resolviendo link', details: error.message });
+  }
+};
+
+/**
+ * GET /api/ghl-channels/connection-links?locationId=
+ * Lista todos los tokens activos de un location.
+ */
+export const listConnectionLinks = async (req, res) => {
+  const { locationId } = req.query;
+  if (!locationId) return res.status(400).json({ error: 'locationId es requerido' });
+  try {
+    const setupBase = process.env.GHL_SETUP_URL || process.env.WEBHOOK_BASE_URL || 'https://whatsfull.sixteam.pro';
+    const tokens = await listConnectionTokens(locationId);
+    const links = tokens.map(t => ({
+      ...t,
+      link: `${setupBase}/connect/${t.token}`,
+    }));
+    res.json({ success: true, locationId, links });
+  } catch (error) {
+    res.status(500).json({ error: 'Error listando links', details: error.message });
+  }
+};
+
+/**
+ * DELETE /api/ghl-channels/connection-link/:token
+ * Revoca un token de conexión.
+ */
+export const revokeConnectionLink = async (req, res) => {
+  const { token } = req.params;
+  try {
+    const deleted = await deleteConnectionToken(token);
+    if (!deleted) return res.status(404).json({ error: 'Token no encontrado' });
+    res.json({ success: true, token });
+  } catch (error) {
+    res.status(500).json({ error: 'Error revocando link', details: error.message });
   }
 };
