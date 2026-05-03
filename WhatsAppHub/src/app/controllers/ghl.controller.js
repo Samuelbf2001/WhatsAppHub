@@ -956,7 +956,9 @@ export const handleGHLWebhook = async (req, res) => {
     }
 
     // Deduplicar — GHL envía el mismo evento dos veces en algunos setups
-    const dedupKey = `${body.conversationId}:${body.dateAdded ?? body.timestamp}:${body.contactId}`;
+    // Usar message body como fallback para evitar key "undefined:undefined:undefined"
+    const _dedupBody = (body.body || body.message || '').slice(0, 40);
+    const dedupKey = `${body.conversationId || body.contactId || 'noid'}:${body.dateAdded ?? body.timestamp ?? Date.now()}:${_dedupBody}`;
     if (_isDuplicateGHLEvent(dedupKey)) {
       console.log(`⏭️ GHL OutboundMessage duplicado ignorado [${dedupKey.slice(0, 60)}]`);
       return;
@@ -1033,11 +1035,20 @@ export const handleGHLWebhook = async (req, res) => {
     }
 
     // Construir WhatsAppService con credenciales del canal
-    const whatsapp = new WhatsAppService({
-      provider: channelAccount.provider || 'evolution',
-      apiKey:   channelAccount.evolution_apikey   || process.env.EVOLUTION_API_KEY,
-      instance: channelAccount.evolution_instance || process.env.EVOLUTION_INSTANCE,
-    });
+    const _provider = channelAccount.provider || 'evolution';
+    const whatsapp = new WhatsAppService(
+      _provider === 'gupshup'
+        ? {
+            provider: 'gupshup',
+            appId:    channelAccount.gupshup_app_id,
+            appToken: channelAccount.gupshup_app_token,
+          }
+        : {
+            provider: 'evolution',
+            apiKey:   channelAccount.evolution_apikey   || process.env.EVOLUTION_API_KEY,
+            instance: channelAccount.evolution_instance || process.env.EVOLUTION_INSTANCE,
+          }
+    );
 
     // Detectar si el destino es un grupo: los JIDs de grupo tienen >15 dígitos
     // (E.164 máximo es 15; grupos de WhatsApp tienen ~18 dígitos en el JID)
