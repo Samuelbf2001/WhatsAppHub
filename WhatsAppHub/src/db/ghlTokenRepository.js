@@ -22,11 +22,19 @@ export async function getGHLTokens(locationId) {
   return rows[0] || null;
 }
 
-export async function updateGHLAccessToken(locationId, newAccessToken, expiresIn) {
+export async function updateGHLAccessToken(locationId, newAccessToken, expiresIn, newRefreshToken = null) {
   const expiresAt = new Date(Date.now() + expiresIn * 1000);
-  await pool.query(
-    `UPDATE ghl_oauth_tokens SET access_token = $1, expires_at = $2, updated_at = NOW()
-     WHERE location_id = $3`,
-    [newAccessToken, expiresAt, locationId]
-  );
+  if (newRefreshToken) {
+    await pool.query(
+      `UPDATE ghl_oauth_tokens SET access_token = $1, refresh_token = $2, expires_at = $3, updated_at = NOW()
+       WHERE location_id = $4`,
+      [newAccessToken, newRefreshToken, expiresAt, locationId]
+    );
+  } else {
+    await pool.query(
+      `UPDATE ghl_oauth_tokens SET access_token = $1, expires_at = $2, updated_at = NOW()
+       WHERE location_id = $3`,
+      [newAccessToken, expiresAt, locationId]
+    );
+  }
 }

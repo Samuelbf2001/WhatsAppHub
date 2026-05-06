@@ -77,8 +77,9 @@ async function getLocationTokenFromCompany(companyId, locationId) {
   }
 
   const { access_token, expires_in } = res.data;
-  // Guardar location token para uso futuro
-  await saveGHLTokens(locationId, access_token, companyTokens.refresh_token, expires_in || 86400);
+  // Los location tokens generados desde company no tienen refresh_token propio;
+  // se regeneran desde el company token cuando expiran, así que guardamos null.
+  await saveGHLTokens(locationId, access_token, null, expires_in || 86400);
   console.log(`✅ Location token generado para ${locationId} desde company ${companyId}`);
   return access_token;
 }
@@ -114,18 +115,24 @@ export async function getValidGHLToken(locationId, companyId = null) {
   const now = Date.now();
 
   if (expiresAt - now < 5 * 60 * 1000) {
+    // Si no hay refresh_token (token generado desde company), regenerar directamente
+    if (!tokens.refresh_token && companyId) {
+      console.log(`🔄 Regenerando location token desde company ${companyId} (sin refresh_token propio)`);
+      const token = await getLocationTokenFromCompany(companyId, locationId);
+      _tokenCache.set(locationId, { token, expiresAt: Date.now() + 86400 * 1000 });
+      return token;
+    }
     try {
       console.log(`🔄 Refrescando token GHL para location ${locationId}`);
       const refreshed = await refreshGHLToken(tokens.refresh_token);
-      await updateGHLAccessToken(locationId, refreshed.accessToken, refreshed.expiresIn);
+      await updateGHLAccessToken(locationId, refreshed.accessToken, refreshed.expiresIn, refreshed.refreshToken);
       const newExpiresAt = Date.now() + (refreshed.expiresIn || 86400) * 1000;
       _tokenCache.set(locationId, { token: refreshed.accessToken, expiresAt: newExpiresAt });
       return refreshed.accessToken;
     } catch (refreshErr) {
       console.warn(`⚠️ No se pudo refrescar location token: ${refreshErr.message}`);
-      // Fallback: generar nuevo location token desde company token si disponible
       if (companyId) {
-        console.log(`🔄 Fallback: generando location token desde company ${companyId}`);
+        console.log(`🔄 Fallback: regenerando location token desde company ${companyId}`);
         const token = await getLocationTokenFromCompany(companyId, locationId);
         _tokenCache.set(locationId, { token, expiresAt: Date.now() + 86400 * 1000 });
         return token;
