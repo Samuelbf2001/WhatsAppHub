@@ -234,6 +234,12 @@ export async function runMigrations() {
         ON ghl_connection_tokens(location_id);
     `);
 
+    // Los location tokens generados desde company no tienen refresh_token propio
+    await client.query(`
+      ALTER TABLE ghl_oauth_tokens
+        ALTER COLUMN refresh_token DROP NOT NULL;
+    `).catch(() => {});
+
     console.log('✅ Migraciones ejecutadas correctamente');
   } catch (err) {
     console.error('❌ Error en migraciones:', err);
